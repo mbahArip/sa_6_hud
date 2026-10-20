@@ -27,6 +27,74 @@ Modern, minimalist HUD, tactical radar, and dynamic navigation system for **Gran
 
 ---
 
+## Tested Environment
+
+### Game Executable
+
+| Property | Value |
+|---|---|
+| **Version** | GTA San Andreas **1.0 US "HOODLUM"** (verified via the `plugin-sdk` signature check at `0x401000` → `0x16197BE9`) |
+| **File** | `gta_sa.exe` — 14,383,616 bytes |
+| **MD5** | `07B6C7496D10ADA10A7AFB930BF1C709` |
+| **SHA-1** | `A1B4203E0B4671D18B123D0E2B027446BD087EE7` |
+| **SHA-256** | `21903BCD40957F130A0BD802A44FC4CDBEC2A8224F757B03EC3CB7467CC06EF3` |
+| **Readme** | `ReadMe/Readme.txt` → `V1.00` |
+
+> [!NOTE]
+> `6hud` patches vanilla draw routines at fixed addresses (`0x586880`, `0x58EAF0`, `0x58AA50`, `0x58AEA0`) and resolves the radar TXD pool at `0xBA8478`. These are valid **only** for the 1.0 US HOODLUM executable. Other builds (1.0 EU, 1.1 US/EU, Steam, Compact) will not work.
+
+### Mods Installed During Testing
+
+The following mod stack was active in the test environment. `6hud` was verified running alongside all of them.
+
+#### ASI Plugins (game root)
+
+| Plugin | Version | Role |
+|---|---|---|
+| `6hud.asi` | this project | 6HUD radar, HUD & navigation |
+| `CLEO.asi` | 5.4.0 | CLEO script engine |
+| `modloader.asi` | — | Silent's Modloader (file priority & TXD overrides) |
+| `SilentPatchSA.asi` | 1.1.34.1 | Silent's Patch (EXE compatibility, input, windowing) |
+| `III.VC.SA.LimitAdjuster.asi` | 1.7.0 | Draw distance / streaming / ped limits |
+| `III.VC.SA.WindowedMode.asi` | 1.0.0.0 | Windowed mode support (ThirteenAG) |
+| `FramerateVigilante.SA.asi` | — | Frame rate cap / monitor sync |
+| `imfast.asi` | — | Faster loading times |
+| `StreamMemFix1.0.asi` / `StreamMemFix2.2_test2.asi` | 1.0 / 2.2 | Streaming memory fix |
+
+#### CLEO Scripts
+
+| Script | Role |
+|---|---|
+| `cleo/transfender.cs` | TransFender (paint, color, and plate changes) |
+| `cleo/VehicleSpawner.cs` | Vehicle spawner menu |
+
+#### Silent's Modloader Mods
+
+| Mod | Role |
+|---|---|
+| `modloader/proper_radar_512/` | Proper Radar 512 — 512×512 radar tile set (overrides the vanilla radar TXD) |
+| `modloader/hd_fonts/` | HD Fonts — high-resolution `fonts.txd` |
+| `modloader/brz_pandem/` | Subaru BRZ Pandem V3 (replaces the Feltzer) |
+| `modloader/r33_abflug/` | R33 Nismo Alpha (adds the Alpha vehicle) |
+
+#### Map & World
+
+| Mod | Role |
+|---|---|
+| `LAE` / `LAE2` (Los Angeles Extended) | Map expansion — `data/maps/LA/LAe.ipl`, `LAe2.ipl` and accompanying `.ide` files |
+| `ariane/` | Ariane map editor workspace (LAE2 import/backup) |
+
+#### Audio
+
+| File | Role |
+|---|---|
+| `bass.dll`, `vorbis.dll`, `vorbisFile.dll`, `vorbisHooked.dll`, `ogg.dll`, `eax.dll` | OpenAL / Vorbis audio stack |
+
+> [!TIP]
+> `6hud` ships its own map tiles under `assets/radar/`. When **Proper Radar 512** is installed, keep `USE_CUSTOM_MAP_TILE = 1` in `6hud.ini` so 6HUD's tiles take priority over the vanilla radar TXD. Set it to `0` to fall back to the modloader's radar tiles.
+
+---
+
 ## Development & Prerequisites
 
 ### Required SDK
@@ -40,7 +108,7 @@ This fork contains reverse-engineered game structures, hooks, and symbol definit
 - **Compiler**: Visual Studio 2022 / 2026 (MSVC v143 / v145 with C++20 / C++latest support)
 - **Architecture**: 32-bit (x86 / Win32)
 - **DirectX**: Microsoft DirectX 9 SDK (June 2010 or compatible header/lib bundle)
-- **Target Game**: GTA San Andreas v1.0 US (`gta_sa.exe`, 14,383,616 bytes)
+- **Target Game**: GTA San Andreas v1.0 US HOODLUM (`gta_sa.exe`, 14,383,616 bytes) — see [Tested Environment](#tested-environment)
 
 ### Build Instructions
 
