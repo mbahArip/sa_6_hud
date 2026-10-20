@@ -43,11 +43,9 @@ Modern, minimalist HUD, tactical radar, and dynamic navigation system for **Gran
 > [!NOTE]
 > `6hud` patches vanilla draw routines at fixed addresses (`0x586880`, `0x58EAF0`, `0x58AA50`, `0x58AEA0`) and resolves the radar TXD pool at `0xBA8478`. These are valid **only** for the 1.0 US HOODLUM executable. Other builds (1.0 EU, 1.1 US/EU, Steam, Compact) will not work.
 
-### Mods Installed During Testing
+### ASI Plugins Installed During Testing
 
-The following mod stack was active in the test environment. `6hud` was verified running alongside all of them.
-
-#### ASI Plugins (game root)
+`6hud` was verified running alongside the following ASI plugins.
 
 | Plugin | Version | Role |
 |---|---|---|
@@ -59,39 +57,8 @@ The following mod stack was active in the test environment. `6hud` was verified 
 | `III.VC.SA.WindowedMode.asi` | 1.0.0.0 | Windowed mode support (ThirteenAG) |
 | `FramerateVigilante.SA.asi` | — | Frame rate cap / monitor sync |
 | `imfast.asi` | — | Faster loading times |
-| `StreamMemFix1.0.asi` / `StreamMemFix2.2_test2.asi` | 1.0 / 2.2 | Streaming memory fix |
-
-#### CLEO Scripts
-
-| Script | Role |
-|---|---|
-| `cleo/transfender.cs` | TransFender (paint, color, and plate changes) |
-| `cleo/VehicleSpawner.cs` | Vehicle spawner menu |
-
-#### Silent's Modloader Mods
-
-| Mod | Role |
-|---|---|
-| `modloader/proper_radar_512/` | Proper Radar 512 — 512×512 radar tile set (overrides the vanilla radar TXD) |
-| `modloader/hd_fonts/` | HD Fonts — high-resolution `fonts.txd` |
-| `modloader/brz_pandem/` | Subaru BRZ Pandem V3 (replaces the Feltzer) |
-| `modloader/r33_abflug/` | R33 Nismo Alpha (adds the Alpha vehicle) |
-
-#### Map & World
-
-| Mod | Role |
-|---|---|
-| `LAE` / `LAE2` (Los Angeles Extended) | Map expansion — `data/maps/LA/LAe.ipl`, `LAe2.ipl` and accompanying `.ide` files |
-| `ariane/` | Ariane map editor workspace (LAE2 import/backup) |
-
-#### Audio
-
-| File | Role |
-|---|---|
-| `bass.dll`, `vorbis.dll`, `vorbisFile.dll`, `vorbisHooked.dll`, `ogg.dll`, `eax.dll` | OpenAL / Vorbis audio stack |
-
-> [!TIP]
-> `6hud` ships its own map tiles under `assets/radar/`. When **Proper Radar 512** is installed, keep `USE_CUSTOM_MAP_TILE = 1` in `6hud.ini` so 6HUD's tiles take priority over the vanilla radar TXD. Set it to `0` to fall back to the modloader's radar tiles.
+| `StreamMemFix1.0.asi` | 1.0 | Streaming memory fix |
+| `StreamMemFix2.2_test2.asi` | 2.2 | Streaming memory fix |
 
 ---
 
