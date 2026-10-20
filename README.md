@@ -44,20 +44,34 @@ This fork contains reverse-engineered game structures, hooks, and symbol definit
 
 ### Build Instructions
 
-1. Clone `6hud`:
+1. Clone `6hud` with its submodules:
    ```bash
-   git clone https://github.com/mbahArip/sa_6_hud.git
+   git clone --recurse-submodules https://github.com/mbahArip/sa_6_hud.git
    cd sa_6_hud
    ```
-2. Clone and build the extended SDK by Dryxio:
+   Already cloned? Run `git submodule update --init --recursive`.
+
+   The `vendor/sa_ui` submodule provides the [sa_ui](https://github.com/mbahArip/sa_ui) header-only UI library used by the in-game settings menu.
+
+2. Clone the extended SDK by Dryxio:
    ```bash
    git clone https://github.com/Dryxio/plugin-sdk-sa.git
    ```
-3. Ensure include and library paths in `6hud.vcxproj` point to your local `plugin-sdk-sa` directory.
+
+3. Point the build at your SDK. `$(SdkRoot)` resolves from the `SA_SDK_ROOT` environment variable, then falls back to a local path:
+   ```powershell
+   $env:SA_SDK_ROOT = "C:\path\to\plugin-sdk-sa"
+   ```
+   Or override it for a single build:
+   ```powershell
+   MSBuild.exe 6hud.vcxproj /p:Configuration=Release /p:Platform=Win32 /p:SdkRoot="C:\path\to\plugin-sdk-sa"
+   ```
+
 4. Open `6hud.vcxproj` in Visual Studio or build from CLI:
    ```powershell
    MSBuild.exe 6hud.vcxproj /p:Configuration=Release /p:Platform=Win32
    ```
+
 5. Build output (`Release/6hud.asi`) and assets from `assets/` will copy to your game directory.
 
 ---
@@ -80,8 +94,18 @@ All modules, keybinds, layout anchors, offsets, colors, and wanted extensions ar
 
 ---
 
+## Project Dependencies
+
+| Dependency | Role | Source |
+|---|---|---|
+| [Dryxio/plugin-sdk-sa](https://github.com/Dryxio/plugin-sdk-sa) | Game structures, hooks, memory patches | Required to build |
+| [mbahArip/sa_ui](https://github.com/mbahArip/sa_ui) | Header-only native UI library (settings menu) | `vendor/sa_ui` submodule |
+
+---
+
 ## Credits & Acknowledgments
 
 - **100% Code Generation**: LLM agents (Claude / Gemini models via Antigravity harness).
 - **SDK**: [Dryxio/plugin-sdk-sa](https://github.com/Dryxio/plugin-sdk-sa) by Dryxio and the Plugin-SDK community.
+- **UI Library**: [mbahArip/sa_ui](https://github.com/mbahArip/sa_ui).
 - **Reference & Inspiration**: Classic GTA modding community, v-hud by gennariarmando, and GTA V / GTA VI modern UI designs.
