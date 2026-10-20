@@ -18,7 +18,7 @@
 6hud/
 ├── 6hud.vcxproj            ; Visual Studio C++ project file (Win32 .asi)
 ├── 6hud.ini                ; Runtime configuration file (fully commented)
-├── .opencode/skills/       ; Project-scoped agent skills (sa-plugin-sdk, sa-ui)
+├── .agents/skills/         ; Project-scoped agent skills (sa-plugin-sdk, sa-ui)
 ├── assets/                 ; Textures + colors.ini shipped to game folder
 ├── shaders/                ; Standalone .hlsl shader sources
 ├── vendor/sa_ui/           ; Git submodule: header-only native UI library
