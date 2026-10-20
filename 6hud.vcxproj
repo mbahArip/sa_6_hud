@@ -59,7 +59,11 @@
     <PostBuildEvent>
       <Command>copy /Y "$(TargetPath)" "D:\Games\gta sa\GTA San Andreas\$(TargetFileName)"
 if not exist "D:\Games\gta sa\GTA San Andreas\6hud\assets" mkdir "D:\Games\gta sa\GTA San Andreas\6hud\assets"
-xcopy /E /I /Y "$(ProjectDir)assets\*" "D:\Games\gta sa\GTA San Andreas\6hud\assets\"</Command>
+if not exist "D:\Games\gta sa\GTA San Andreas\6hud" mkdir "D:\Games\gta sa\GTA San Andreas\6hud"
+xcopy /E /I /Y "$(ProjectDir)assets\*" "D:\Games\gta sa\GTA San Andreas\6hud\assets\"
+rem The plugin reads colours from 6hud\colors.ini (GetColorsIniPath), not 6hud\assets\colors.ini.
+rem Seed it on first install only so in-game menu colour tweaks are never overwritten.
+if not exist "D:\Games\gta sa\GTA San Andreas\6hud\colors.ini" copy /Y "$(ProjectDir)assets\colors.ini" "D:\Games\gta sa\GTA San Andreas\6hud\colors.ini"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
