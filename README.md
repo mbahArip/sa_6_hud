@@ -8,6 +8,26 @@ Modern, minimalist HUD, tactical radar, and dynamic navigation system for **Gran
 
 ---
 
+## Download
+
+**Pre-built release:** https://github.com/mbahArip/sa_6_hud/releases/latest
+
+Download `6hud_v<version>.rar` and extract it into your GTA San Andreas root directory (the folder containing `gta_sa.exe`).
+
+```
+6hud.asi
+6hud.ini
+6hud\
+    colors.ini
+    assets\
+```
+
+Requires an **ASI Loader** and GTA San Andreas **1.0 US HOODLUM** — see [Installation](#installation) and [Tested Environment](#tested-environment).
+
+**Source:** `git clone --recurse-submodules https://github.com/mbahArip/sa_6_hud.git`
+
+---
+
 ## Highlights
 
 - **Modern Vector & Minimalist Radar**: High-resolution map tile support, auto-scaling, altitude dynamic zoom, enclosed space zoom, and 16:9 aspect ratio correction.
@@ -114,8 +134,17 @@ This fork contains reverse-engineered game structures, hooks, and symbol definit
 ## Installation
 
 1. Install an ASI Loader (e.g. [Silent's ASI Loader](https://gtaforums.com/topic/523431-silents-asi-loader/)).
-2. Place `6hud.asi`, `6hud.ini`, and the `6hud/` folder (containing textures and `colors.ini`) into your GTA San Andreas root directory.
+2. Extract the release RAR into your GTA San Andreas root directory (the folder containing `gta_sa.exe`), or copy these manually:
+   ```
+   6hud.asi
+   6hud.ini
+   6hud\
+       colors.ini
+       assets\
+   ```
 3. Start the game.
+
+The radar is hidden on foot by default — press **J** to reveal it. Press **/** to open the in-game settings menu.
 
 ---
 
