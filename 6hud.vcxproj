@@ -14,7 +14,9 @@
     <ProjectGuid>{66666666-6666-6666-6666-666666666666}</ProjectGuid>
     <RootNamespace>6hud</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
-    <SdkRoot>C:\Users\me\dev\sa_project\plugin-sdk-sa</SdkRoot>
+    <!-- Override with: MSBuild 6hud.vcxproj /p:SdkRoot="D:\path\to\plugin-sdk-sa" -->
+    <SdkRoot Condition="'$(SdkRoot)'=='' and '$(SA_SDK_ROOT)'!=''">$(SA_SDK_ROOT)</SdkRoot>
+    <SdkRoot Condition="'$(SdkRoot)'==''">C:\Users\me\dev\sa_project\plugin-sdk-sa</SdkRoot>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
@@ -37,7 +39,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
       <PreprocessorDefinitions>GTASA;RW;USE_PCH;PLUGIN_SGV_10US;_CRT_SECURE_NO_WARNINGS;_CRT_NON_CONFORMING_SWPRINTFS;_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING;WIN32;NDEBUG;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>C:\Users\me\dev\sa_project\sa_ui\include;$(SdkRoot)\shared\dxsdk;$(SdkRoot)\plugin_sa;$(SdkRoot)\plugin_sa\game_sa;$(SdkRoot)\plugin_sa\game_sa\enums;$(SdkRoot)\plugin_sa\game_sa\rw;$(SdkRoot)\safetyhook;$(SdkRoot)\shared;$(SdkRoot)\shared\game;$(SdkRoot)\injector;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)vendor\sa_ui\include;$(SdkRoot)\shared\dxsdk;$(SdkRoot)\plugin_sa;$(SdkRoot)\plugin_sa\game_sa;$(SdkRoot)\plugin_sa\game_sa\enums;$(SdkRoot)\plugin_sa\game_sa\rw;$(SdkRoot)\safetyhook;$(SdkRoot)\shared;$(SdkRoot)\shared\game;$(SdkRoot)\injector;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <ForcedIncludeFiles>$(SdkRoot)\shared\stdafx.h</ForcedIncludeFiles>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <Optimization>MaxSpeed</Optimization>
@@ -63,7 +65,7 @@ xcopy /E /I /Y "$(ProjectDir)assets\*" "D:\Games\gta sa\GTA San Andreas\6hud\ass
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
       <PreprocessorDefinitions>GTASA;RW;USE_PCH;PLUGIN_SGV_10US;_CRT_SECURE_NO_WARNINGS;_CRT_NON_CONFORMING_SWPRINTFS;_SILENCE_CXX17_CODEDR_DEPRECATION_WARNING;WIN32;_DEBUG;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(SdkRoot)\plugin_sa;$(SdkRoot)\plugin_sa\game_sa;$(SdkRoot)\plugin_sa\game_sa\enums;$(SdkRoot)\plugin_sa\game_sa\rw;$(SdkRoot)\safetyhook;$(SdkRoot)\shared;$(SdkRoot)\shared\game;$(SdkRoot)\injector;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)vendor\sa_ui\include;$(SdkRoot)\plugin_sa;$(SdkRoot)\plugin_sa\game_sa;$(SdkRoot)\plugin_sa\game_sa\enums;$(SdkRoot)\plugin_sa\game_sa\rw;$(SdkRoot)\safetyhook;$(SdkRoot)\shared;$(SdkRoot)\shared\game;$(SdkRoot)\injector;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <ForcedIncludeFiles>$(SdkRoot)\shared\stdafx.h</ForcedIncludeFiles>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <ExceptionHandling>Async</ExceptionHandling>

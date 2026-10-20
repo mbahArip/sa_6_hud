@@ -18,8 +18,10 @@
 6hud/
 ├── 6hud.vcxproj            ; Visual Studio C++ project file (Win32 .asi)
 ├── 6hud.ini                ; Runtime configuration file (fully commented)
+├── .opencode/skills/       ; Project-scoped agent skills (sa-plugin-sdk, sa-ui)
 ├── assets/                 ; Textures + colors.ini shipped to game folder
 ├── shaders/                ; Standalone .hlsl shader sources
+├── vendor/sa_ui/           ; Git submodule: header-only native UI library
 ├── docs/
 │   ├── overview.md         ; Architecture, lifecycle, feature map
 │   ├── radar_pipeline.md   ; Stencil masking, projection math, clamping
@@ -41,6 +43,8 @@
   ```powershell
   & "C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe" "6hud.vcxproj" /p:Configuration=Release /p:Platform=Win32 /v:m
   ```
+- **SDK path**: `$(SdkRoot)` resolves from the `SA_SDK_ROOT` environment variable, then falls back to `C:\Users\me\dev\sa_project\plugin-sdk-sa`. Override per build with `/p:SdkRoot="<path>"`.
+- **Submodules**: `vendor/sa_ui` must be initialized (`git submodule update --init --recursive`) before building.
 - **Post-build**: copies `6hud.asi` and `assets/*` into the game directory automatically.
 - **Install destination**: `D:\Games\gta sa\GTA San Andreas\` (holds `6hud.asi`, `6hud.ini`, `6hud/` assets folder).
 
