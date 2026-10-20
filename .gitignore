@@ -7,6 +7,9 @@ x86/
 bin/
 obj/
 
+# Release packaging output
+dist/
+
 # User / IDE files
 .vs/
 *.user
