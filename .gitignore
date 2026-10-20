@@ -1,0 +1,28 @@
+# Visual Studio build artifacts
+Release/
+Debug/
+x64/
+x86/
+6hud/
+bin/
+obj/
+
+# User / IDE files
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.map
+
+# Binaries & intermediate files
+*.obj
+*.pdb
+*.ilk
+*.exp
+*.lib
+*.asi
+*.tlog
+*.lastbuildstate
+*.log
+hs_err_pid*.log

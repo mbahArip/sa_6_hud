@@ -1,0 +1,234 @@
+static IDirect3DTexture9* g_pBlurRT = nullptr;
+static int s_lastBlurWidth = 0;
+static int s_lastBlurHeight = 0;
+static int s_lastBlurQuality = 0;
+
+void Radar::OnD3dLost() {
+    if (g_pBlurRT) {
+        g_pBlurRT->Release();
+        g_pBlurRT = nullptr;
+    }
+    s_lastBlurWidth = 0;
+    s_lastBlurHeight = 0;
+    s_lastBlurQuality = 0;
+    DestroyShaders();
+}
+
+void Radar::OnD3dReset() {
+    CreateShaders();
+}
+
+void Radar::DrawBackdrop(const CRect& rect, float alpha) {
+    if (g_config.enableBackdropBlur && alpha > 0.01f) {
+        IDirect3DDevice9* dev = (IDirect3DDevice9*)RwD3D9GetCurrentD3DDevice();
+        if (dev) {
+            int sw = RsGlobal.maximumWidth;
+            int sh = RsGlobal.maximumHeight;
+            if (sw > 100 && sh > 100) {
+                if (g_pBlurRT && (sw != s_lastBlurWidth || sh != s_lastBlurHeight || g_config.blurQuality != s_lastBlurQuality)) {
+                    g_pBlurRT->Release();
+                    g_pBlurRT = nullptr;
+                }
+
+                IDirect3DSurface9* pBackBuf = nullptr;
+                if (SUCCEEDED(dev->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &pBackBuf))) {
+                    D3DSURFACE_DESC desc;
+                    if (SUCCEEDED(pBackBuf->GetDesc(&desc))) {
+                        // Downscale quality divisor (1 = 8x, 2 = 4x, 3 = 2x, 4 = 1x native)
+                        int div = (g_config.blurQuality == 1) ? 8 : (g_config.blurQuality == 3) ? 2 : (g_config.blurQuality == 4) ? 1 : 4;
+                        int tw = std::max(sw / div, 32);
+                        int th = std::max(sh / div, 32);
+
+                        if (!g_pBlurRT) {
+                            if (SUCCEEDED(dev->CreateTexture(tw, th, 1, D3DUSAGE_RENDERTARGET, desc.Format, D3DPOOL_DEFAULT, &g_pBlurRT, NULL))) {
+                                s_lastBlurWidth = sw;
+                                s_lastBlurHeight = sh;
+                                s_lastBlurQuality = g_config.blurQuality;
+                            }
+                        }
+
+                        if (g_pBlurRT) {
+                            IDirect3DSurface9* pRTSurf = nullptr;
+                            if (SUCCEEDED(g_pBlurRT->GetSurfaceLevel(0, &pRTSurf))) {
+                                if (SUCCEEDED(dev->StretchRect(pBackBuf, NULL, pRTSurf, NULL, D3DTEXF_LINEAR))) {
+                                    DrawD3DTexturedRoundedFill(dev, g_pBlurRT, rect, Radius(), (float)sw, (float)sh, CRGBA(255, 255, 255, (unsigned char)(255 * alpha)));
+                                }
+                                pRTSurf->Release();
+                            }
+                        }
+                    }
+                    pBackBuf->Release();
+                }
+            }
+        }
+    }
+
+    float unifiedOpacity = g_config.radarOpacity * alpha;
+    CRGBA col = ModColor(g_config.backdropColor, unifiedOpacity);
+    DrawRoundedFill(rect, Radius(), col);
+}
+
+static bool GameplayRunning() {
+    if (CCutsceneMgr::ms_running || CCutsceneMgr::ms_cutsceneProcessing) return false;
+    if (FrontEndMenuManager.m_bMenuActive) return false;
+    return true;
+}
+
+typedef void(*StepFn)();
+static void GuardedRun(StepFn step, const char* tag) {
+    __try {
+        step();
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        g_radarDead = true;
+        LogWrite("radar error caught in %s — fallback active", tag);
+    }
+}
+
+static void* g_pSearchRadiusPS = nullptr;
+static void* g_pPoliceAuraPS   = nullptr;
+
+void Radar::CreateShaders() {
+    if (!g_pSearchRadiusPS) {
+        RwBool ok = RwD3D9CreatePixelShader((const RwUInt32*)g_psSearchRadius, &g_pSearchRadiusPS);
+        LogWrite("shader: SearchRadiusPS created %s (%p)", ok ? "OK" : "FAILED", g_pSearchRadiusPS);
+    }
+    if (!g_pPoliceAuraPS) {
+        RwBool ok = RwD3D9CreatePixelShader((const RwUInt32*)g_psPoliceAura, &g_pPoliceAuraPS);
+        LogWrite("shader: PoliceAuraPS created %s (%p)", ok ? "OK" : "FAILED", g_pPoliceAuraPS);
+    }
+    if (!g_pBackdropBlurPS) {
+        RwBool ok = RwD3D9CreatePixelShader((const RwUInt32*)g_psBackdropBlur, &g_pBackdropBlurPS);
+        LogWrite("shader: BackdropBlurPS created %s (%p)", ok ? "OK" : "FAILED", g_pBackdropBlurPS);
+    }
+
+    if (!g_pTexStarBase) {
+        g_pTexStarBase = LoadPngTexture("wanted\\starBase.png");
+    }
+    if (!g_pTexStarHeat) {
+        g_pTexStarHeat = LoadPngTexture("wanted\\starHeat.png");
+    }
+    if (!g_pTexStarLooking) {
+        g_pTexStarLooking = LoadPngTexture("wanted\\starLooking.png");
+    }
+    if (!g_pTexStarNoInfo) {
+        g_pTexStarNoInfo = LoadPngTexture("wanted\\starNoInfo.png");
+    }
+    if (!g_pTexPersonnelArc) {
+        g_pTexPersonnelArc = LoadPngTexture("wanted\\personelArc.png");
+    }
+    if (!g_pTexProfileIdentity) {
+        g_pTexProfileIdentity = LoadPngTexture("wanted\\profile\\identity.png");
+    }
+    if (!g_pTexProfileVehicle) {
+        g_pTexProfileVehicle = LoadPngTexture("wanted\\profile\\vehicle.png");
+    }
+    if (!g_pTexProfileOutfit) {
+        g_pTexProfileOutfit = LoadPngTexture("wanted\\profile\\outfit.png");
+    }
+    if (!g_pTexProfileWeapon) {
+        g_pTexProfileWeapon = LoadPngTexture("wanted\\profile\\weapon.png");
+    }
+    if (!g_pTexIfruit)      g_pTexIfruit      = LoadPngTexture("radar\\ifruit.png");
+    if (!g_pTexMission)     g_pTexMission     = LoadPngTexture("radar\\mission.png");
+    if (!g_pTexZAbove)      g_pTexZAbove      = LoadPngTexture("radar\\z_above.png");
+    if (!g_pTexZBelow)      g_pTexZBelow      = LoadPngTexture("radar\\z_below.png");
+    if (!g_pTexPlayer)      g_pTexPlayer      = LoadPngTexture("radar\\player.png");
+    if (!g_pTexPlayerWanted)g_pTexPlayerWanted= LoadPngTexture("radar\\player_wanted.png");
+    if (!g_pTexNorth)       g_pTexNorth       = LoadPngTexture("radar\\north.png");
+    if (!g_pTexEngine)      g_pTexEngine      = LoadPngTexture("radar\\engine.png");
+    if (!g_pTexFuel)        g_pTexFuel        = LoadPngTexture("radar\\fuel.png");
+    if (!g_pTexNitro)       g_pTexNitro       = LoadPngTexture("radar\\nitro.png");
+    if (!g_pTexWallet)      g_pTexWallet      = LoadPngTexture("wallet.png");
+}
+
+void Radar::DestroyShaders() {
+    if (g_pSearchRadiusPS) {
+        ((IDirect3DPixelShader9*)g_pSearchRadiusPS)->Release();
+        g_pSearchRadiusPS = nullptr;
+    }
+    if (g_pPoliceAuraPS) {
+        ((IDirect3DPixelShader9*)g_pPoliceAuraPS)->Release();
+        g_pPoliceAuraPS = nullptr;
+    }
+    if (g_pBackdropBlurPS) {
+        ((IDirect3DPixelShader9*)g_pBackdropBlurPS)->Release();
+        g_pBackdropBlurPS = nullptr;
+    }
+
+    if (g_pTexStarBase)    { g_pTexStarBase->Release();    g_pTexStarBase = nullptr; }
+    if (g_pTexStarHeat)    { g_pTexStarHeat->Release();    g_pTexStarHeat = nullptr; }
+    if (g_pTexStarLooking) { g_pTexStarLooking->Release(); g_pTexStarLooking = nullptr; }
+    if (g_pTexStarNoInfo)  { g_pTexStarNoInfo->Release();  g_pTexStarNoInfo = nullptr; }
+    if (g_pTexIfruit)      { g_pTexIfruit->Release();      g_pTexIfruit = nullptr; }
+    if (g_pTexMission)     { g_pTexMission->Release();     g_pTexMission = nullptr; }
+    if (g_pTexZAbove)      { g_pTexZAbove->Release();      g_pTexZAbove = nullptr; }
+    if (g_pTexZBelow)      { g_pTexZBelow->Release();      g_pTexZBelow = nullptr; }
+    if (g_pTexPlayer)      { g_pTexPlayer->Release();      g_pTexPlayer = nullptr; }
+    if (g_pTexPlayerWanted){ g_pTexPlayerWanted->Release();g_pTexPlayerWanted = nullptr; }
+    if (g_pTexNorth)       { g_pTexNorth->Release();       g_pTexNorth = nullptr; }
+    if (g_pTexEngine)      { g_pTexEngine->Release();      g_pTexEngine = nullptr; }
+    if (g_pTexFuel)        { g_pTexFuel->Release();        g_pTexFuel = nullptr; }
+    if (g_pTexNitro)       { g_pTexNitro->Release();       g_pTexNitro = nullptr; }
+    if (g_pTexWallet)      { g_pTexWallet->Release();      g_pTexWallet = nullptr; }
+    if (g_pTexPersonnelArc){ g_pTexPersonnelArc->Release();g_pTexPersonnelArc = nullptr; }
+    if (g_pTexProfileIdentity){ g_pTexProfileIdentity->Release(); g_pTexProfileIdentity = nullptr; }
+    if (g_pTexProfileVehicle) { g_pTexProfileVehicle->Release();  g_pTexProfileVehicle = nullptr; }
+    if (g_pTexProfileOutfit)  { g_pTexProfileOutfit->Release();   g_pTexProfileOutfit = nullptr; }
+    if (g_pTexProfileWeapon)  { g_pTexProfileWeapon->Release();   g_pTexProfileWeapon = nullptr; }
+    if (g_pTexSoftGlow)       { g_pTexSoftGlow->Release();        g_pTexSoftGlow = nullptr; }
+    ReleaseCustomWeaponIcons();
+
+    for (int i = 0; i < 144; ++i) {
+        if (s_mapTiles[i].pDayTex)   { s_mapTiles[i].pDayTex->Release();   s_mapTiles[i].pDayTex = nullptr; }
+        if (s_mapTiles[i].pNightTex) { s_mapTiles[i].pNightTex->Release(); s_mapTiles[i].pNightTex = nullptr; }
+        s_mapTiles[i].searchedDay = false;
+        s_mapTiles[i].searchedNight = false;
+    }
+}
+
+void Radar::Init() {
+    ApplyGpsEnginePatches();
+    ApplyNitroPatches();
+    ApplyWantedPatches();
+    g_radarDead = false;
+    g_warmupFrames = 0;
+    g_curDist = g_config.radarZoom;
+    float elevDeg = g_config.radarTiltDeg;
+    float pitchDeg = 90.0f - elevDeg;
+    if (pitchDeg < 0.0f) pitchDeg = 0.0f;
+    g_curTiltRad = pitchDeg * kPi / 180.0f;
+    g_curVCenter = 0.70f;
+    CreateShaders();
+    UpdateRadarRect();
+    for (int i = 0; i < GAUGE_COUNT; ++i) {
+        s_gaugeSlots[i] = GaugeAnimSlot();
+    }
+    LogWrite("radar: initialized");
+}
+
+void Radar::Shutdown() {
+    DestroyShaders();
+    g_pathCount = 0;
+    g_pathFrameTicker = 0;
+    WipeAllHeatAndSearch();
+}
+
+void Radar::Restart() {
+    Shutdown();
+    UpdateRadarRect();
+    for (int i = 0; i < GAUGE_COUNT; ++i) {
+        s_gaugeSlots[i] = GaugeAnimSlot();
+    }
+}
+
+void Radar::SetPin(float x, float y, float z) {
+    g_pinPos = CVector(x, y, z);
+    g_pinActive = true;
+    g_pathFrameTicker = 99;
+}
+
+void Radar::ClearPin() {
+    g_pinActive = false;
+    g_pathCount = 0;
+}
+
