@@ -69,9 +69,7 @@ static void OnDrawHud() {
 }
 
 static void OnDrawRadar() {
-    if (hud6::g_config.enableGps) {
-        hud6::Radar::DrawMenuMapOverlay();
-    }
+    hud6::Radar::DrawMenuMapOverlay();
 }
 
 static void OnRestartGame() {

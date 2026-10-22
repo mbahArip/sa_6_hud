@@ -75,6 +75,7 @@ struct Config {
     CRGBA  backdropColor            = { 14, 18, 24, 255 };   // Dark acrylic radar backdrop color (R, G, B)
     float  backdropOpacity          = 1.00f;                 // Radar background opacity (0.0 = fully transparent, 1.0 = solid)
     bool   useCustomMapTile         = true;                  // USE_CUSTOM_MAP_TILE (load custom png tiles from assets/radar/map if true; vanilla TXD if false)
+    bool   useCustomPauseMap        = true;                  // USE_CUSTOM_PAUSE_MAP (also use custom png tiles on the ESC pause map; sea color fills transparent water)
     bool   fillEmptySea             = true;                  // Fill empty/unstreamed radar map bounds outside 12x12 grid with sea water color (1 = on, 0 = off)
     CRGBA  radarSeaColor            = { 134, 174, 191, 255 }; // #86aebf (minimap.radar.sea) - daytime water
     CRGBA  radarSeaColorNight       = { 92, 87, 149, 255 };   // #5c5795 (minimap.radar.sea_night) - night water
