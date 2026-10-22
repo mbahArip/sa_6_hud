@@ -353,6 +353,7 @@ void LoadConfig() {
     int customTileVal = readInt("Minimap.Radar", "USE_CUSTOM_MAP_TILE", -999999);
     if (customTileVal == -999999) customTileVal = readInt("radar", "use_custom_map_tile", 1);
     g_config.useCustomMapTile    = (customTileVal != 0);
+    g_config.useCustomPauseMap   = readInt("radar", "use_custom_pause_map", g_config.useCustomMapTile ? 1 : 0) != 0;
     g_config.enableBackdropBlur  = readInt("radar", "enable_backdrop_blur", 1) != 0;
     int bq = readInt("Global", "BACKDROP_BLUR_QUALITY", -999999);
     if (bq == -999999) bq = readInt("radar", "blur_quality", 3);
@@ -889,6 +890,7 @@ void SaveConfig() {
     writeInt("Minimap.Radar", "EXPERIMENTAL_SHOW_3D_OBJECTS", g_config.experimentalShow3dObjects ? 1 : 0);
     writeColor("minimap.radar", "3d_objects", g_config.color3dObjects);
     writeInt("Minimap.Radar", "USE_CUSTOM_MAP_TILE", g_config.useCustomMapTile ? 1 : 0);
+    writeInt("Minimap.Radar", "USE_CUSTOM_PAUSE_MAP", g_config.useCustomPauseMap ? 1 : 0);
 
     // [gps] / [Minimap.GPSNavigation]
     writeInt("Minimap.GPSNavigation", "USE_RADAR_GPS", g_config.enableGps ? 1 : 0);

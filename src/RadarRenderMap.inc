@@ -1,3 +1,79 @@
+// Shared by the minimap and the pause map: blit one custom tile PNG onto a screen quad.
+// UVs are inset by half a texel so the LINEAR filter never averages the outermost texel
+// with the transparent region outside the image, which showed as a 1px seam per tile.
+static void BlitMapTileTexture(
+    IDirect3DTexture9* pTex,
+    float sx0, float sy0, float sx1, float sy1,
+    float sx2, float sy2, float sx3, float sy3,
+    float opacity
+) {
+    if (!pTex || opacity <= 0.005f) return;
+    IDirect3DDevice9* dev = (IDirect3DDevice9*)RwD3D9GetCurrentD3DDevice();
+    if (!dev) return;
+
+    unsigned char a = (unsigned char)(255.0f * opacity);
+    DWORD dwCol = D3DCOLOR_ARGB(a, 255, 255, 255);
+    const float uv0 = 0.5f / 512.0f;
+    const float uv1 = 1.0f - uv0;
+    D3D2DVert quad[4] = {
+        { sx0 - 0.5f, sy0 - 0.5f, 0.0f, 1.0f, dwCol, uv0, uv1 },
+        { sx1 - 0.5f, sy1 - 0.5f, 0.0f, 1.0f, dwCol, uv1, uv1 },
+        { sx3 - 0.5f, sy3 - 0.5f, 0.0f, 1.0f, dwCol, uv0, uv0 },
+        { sx2 - 0.5f, sy2 - 0.5f, 0.0f, 1.0f, dwCol, uv1, uv0 },
+    };
+
+    dev->SetFVF(D3DFVF_2DVERT);
+    dev->SetTexture(0, pTex);
+    dev->SetSamplerState(0, D3DSAMP_MINFILTER, D3DTEXF_LINEAR);
+    dev->SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+    // Tiles are 512x512 drawn far smaller, so mip selection would pick a heavily
+    // downsampled level and the map reads as blurry. Force the top mip.
+    dev->SetSamplerState(0, D3DSAMP_MIPFILTER, D3DTEXF_NONE);
+    dev->SetSamplerState(0, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
+    dev->SetSamplerState(0, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
+
+    dev->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_MODULATE);
+    dev->SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_TEXTURE);
+    dev->SetTextureStageState(0, D3DTSS_COLORARG2, D3DTA_DIFFUSE);
+    dev->SetTextureStageState(0, D3DTSS_ALPHAOP, D3DTOP_MODULATE);
+    dev->SetTextureStageState(0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE);
+    dev->SetTextureStageState(0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
+
+    dev->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
+    dev->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
+    dev->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+    dev->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
+    dev->SetRenderState(D3DRS_ZENABLE, FALSE);
+    dev->SetRenderState(D3DRS_LIGHTING, FALSE);
+    dev->SetPixelShader(NULL);
+
+    dev->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, quad, sizeof(D3D2DVert));
+    dev->SetTexture(0, NULL);
+}
+
+// Draws one custom tile, crossfading day/night when both variants exist.
+static void BlitMapTileBlended(
+    int tileIndex,
+    float sx0, float sy0, float sx1, float sy1,
+    float sx2, float sy2, float sx3, float sy3,
+    float opacity
+) {
+    IDirect3DTexture9* pDayTex = nullptr;
+    IDirect3DTexture9* pNightTex = nullptr;
+    GetMapTileTextures(tileIndex, pDayTex, pNightTex);
+    if (!pDayTex && !pNightTex) return;
+
+    float nightBlend = GetDayNightBlend();
+    if (pDayTex && pNightTex) {
+        BlitMapTileTexture(pDayTex,   sx0, sy0, sx1, sy1, sx2, sy2, sx3, sy3, opacity * (1.0f - nightBlend));
+        BlitMapTileTexture(pNightTex, sx0, sy0, sx1, sy1, sx2, sy2, sx3, sy3, opacity * nightBlend);
+    } else if (pDayTex) {
+        BlitMapTileTexture(pDayTex,   sx0, sy0, sx1, sy1, sx2, sy2, sx3, sy3, opacity);
+    } else {
+        BlitMapTileTexture(pNightTex, sx0, sy0, sx1, sy1, sx2, sy2, sx3, sy3, opacity);
+    }
+}
+
 void Radar::DrawMap2D(const CRect& rect, float alpha) {
     float rw = rect.right - rect.left;
     float rh = rect.bottom - rect.top;
@@ -118,65 +194,14 @@ void Radar::DrawMap2D(const CRect& rect, float alpha) {
             }
 
             // Item 6: Load from assets/radar/map/<day|night>/<tile>.png with smooth blend (if USE_CUSTOM_MAP_TILE is true)
-            IDirect3DTexture9* pDayTex = nullptr;
-            IDirect3DTexture9* pNightTex = nullptr;
             if (g_config.useCustomMapTile) {
+                IDirect3DTexture9* pDayTex = nullptr;
+                IDirect3DTexture9* pNightTex = nullptr;
                 GetMapTileTextures(tileIndex, pDayTex, pNightTex);
-            }
-            if (pDayTex || pNightTex) {
-                float nightBlend = GetDayNightBlend();
-                auto drawCustomMapTile = [&](IDirect3DTexture9* pTex, float opacity) {
-                    if (!pTex || opacity <= 0.005f) return;
-                    IDirect3DDevice9* dev = (IDirect3DDevice9*)RwD3D9GetCurrentD3DDevice();
-                    if (!dev) return;
-
-                    unsigned char a = (unsigned char)(255.0f * opacity);
-                    DWORD dwCol = D3DCOLOR_ARGB(a, 255, 255, 255);
-                    D3D2DVert quad[4] = {
-                        { sx0 - 0.5f, sy0 - 0.5f, 0.0f, 1.0f, dwCol, 0.0f, 1.0f },
-                        { sx1 - 0.5f, sy1 - 0.5f, 0.0f, 1.0f, dwCol, 1.0f, 1.0f },
-                        { sx3 - 0.5f, sy3 - 0.5f, 0.0f, 1.0f, dwCol, 0.0f, 0.0f },
-                        { sx2 - 0.5f, sy2 - 0.5f, 0.0f, 1.0f, dwCol, 1.0f, 0.0f },
-                    };
-
-                    dev->SetFVF(D3DFVF_2DVERT);
-                    dev->SetTexture(0, pTex);
-                    dev->SetSamplerState(0, D3DSAMP_MINFILTER, D3DTEXF_LINEAR);
-                    dev->SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
-                    // Tiles are 512x512 drawn at ~150px, so mip selection would pick a heavily
-                    // downsampled level and the map reads as blurry. Force the top mip.
-                    dev->SetSamplerState(0, D3DSAMP_MIPFILTER, D3DTEXF_NONE);
-                    dev->SetSamplerState(0, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
-                    dev->SetSamplerState(0, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
-
-                    dev->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_MODULATE);
-                    dev->SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_TEXTURE);
-                    dev->SetTextureStageState(0, D3DTSS_COLORARG2, D3DTA_DIFFUSE);
-                    dev->SetTextureStageState(0, D3DTSS_ALPHAOP, D3DTOP_MODULATE);
-                    dev->SetTextureStageState(0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE);
-                    dev->SetTextureStageState(0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
-
-                    dev->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
-                    dev->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
-                    dev->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
-                    dev->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
-                    dev->SetRenderState(D3DRS_ZENABLE, FALSE);
-                    dev->SetRenderState(D3DRS_LIGHTING, FALSE);
-                    dev->SetPixelShader(NULL);
-
-                    dev->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, quad, sizeof(D3D2DVert));
-                    dev->SetTexture(0, NULL);
-                };
-
-                if (pDayTex && pNightTex) {
-                    drawCustomMapTile(pDayTex, unifiedMapOpacity * (1.0f - nightBlend));
-                    drawCustomMapTile(pNightTex, unifiedMapOpacity * nightBlend);
-                } else if (pDayTex) {
-                    drawCustomMapTile(pDayTex, unifiedMapOpacity);
-                } else {
-                    drawCustomMapTile(pNightTex, unifiedMapOpacity);
+                if (pDayTex || pNightTex) {
+                    BlitMapTileBlended(tileIndex, sx0, sy0, sx1, sy1, sx2, sy2, sx3, sy3, unifiedMapOpacity);
+                    continue;
                 }
-                continue;
             }
 
             int txdSlot = radarTextures[tileIndex];

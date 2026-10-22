@@ -4,6 +4,80 @@ void Radar::DrawMenuMapOverlay() {
     float sW = ScreenW();
     float sH = ScreenH();
 
+    // 0. Custom PNG tiles on the pause map. Vanilla CRadar::DrawRadarMap is patched to
+    // RET while the 6HUD radar is active, so without this the pause map has no tiles at
+    // all. Sea color is painted underneath and shows through transparent water pixels.
+    if (g_config.enabled && g_config.useCustomMapTile && g_config.useCustomPauseMap) {
+        auto worldToScreen = [&](float wx, float wy, float& sx, float& sy) {
+            CVector2D radarSpace;
+            CRadar::TransformRealWorldPointToRadarSpace(radarSpace, CVector2D(wx, wy));
+            CVector2D scr;
+            CRadar::TransformRadarPointToScreenSpace(scr, radarSpace);
+            sx = scr.x * sW / 640.0f;
+            sy = scr.y * sH / 448.0f;
+        };
+
+        float nightBlend = GetDayNightBlend();
+        CRGBA seaCol(
+            (unsigned char)Lerpf((float)g_config.radarSeaColor.r, (float)g_config.radarSeaColorNight.r, nightBlend),
+            (unsigned char)Lerpf((float)g_config.radarSeaColor.g, (float)g_config.radarSeaColorNight.g, nightBlend),
+            (unsigned char)Lerpf((float)g_config.radarSeaColor.b, (float)g_config.radarSeaColorNight.b, nightBlend),
+            255
+        );
+
+        // Sea base: the whole 6000x6000 world square, which is exactly the map extent.
+        float seaX0, seaY0, seaX1, seaY1, seaX2, seaY2, seaX3, seaY3;
+        worldToScreen(-3000.0f,  3000.0f, seaX0, seaY0); // top-left
+        worldToScreen( 3000.0f,  3000.0f, seaX1, seaY1); // top-right
+        worldToScreen(-3000.0f, -3000.0f, seaX3, seaY3); // bottom-left
+        worldToScreen( 3000.0f, -3000.0f, seaX2, seaY2); // bottom-right
+
+        if (g_config.fillEmptySea) {
+            IDirect3DDevice9* dev = (IDirect3DDevice9*)RwD3D9GetCurrentD3DDevice();
+            if (dev) {
+                DWORD dwCol = D3DCOLOR_ARGB(seaCol.a, seaCol.r, seaCol.g, seaCol.b);
+                D3D2DVert quad[4] = {
+                    { seaX0, seaY0, 0.0f, 1.0f, dwCol, 0.0f, 0.0f },
+                    { seaX1, seaY1, 0.0f, 1.0f, dwCol, 0.0f, 0.0f },
+                    { seaX3, seaY3, 0.0f, 1.0f, dwCol, 0.0f, 0.0f },
+                    { seaX2, seaY2, 0.0f, 1.0f, dwCol, 0.0f, 0.0f },
+                };
+                dev->SetFVF(D3DFVF_2DVERT);
+                dev->SetTexture(0, NULL);
+                dev->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
+                dev->SetRenderState(D3DRS_ZENABLE, FALSE);
+                dev->SetRenderState(D3DRS_LIGHTING, FALSE);
+                dev->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
+                dev->SetPixelShader(NULL);
+                dev->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, quad, sizeof(D3D2DVert));
+            }
+        }
+
+        for (int ty = 0; ty < 12; ++ty) {
+            for (int tx = 0; tx < 12; ++tx) {
+                float wx0 = -3000.0f + (float)tx * 500.0f;
+                float wx1 = wx0 + 500.0f;
+                float wy0 =  3000.0f - (float)(ty + 1) * 500.0f;
+                float wy1 =  3000.0f - (float)ty * 500.0f;
+
+                float sx0, sy0, sx1, sy1, sx2, sy2, sx3, sy3;
+                worldToScreen(wx0, wy0, sx0, sy0);
+                worldToScreen(wx1, wy0, sx1, sy1);
+                worldToScreen(wx1, wy1, sx2, sy2);
+                worldToScreen(wx0, wy1, sx3, sy3);
+
+                if (std::max(std::max(sx0, sx1), std::max(sx2, sx3)) < 0.0f ||
+                    std::min(std::min(sx0, sx1), std::min(sx2, sx3)) > sW ||
+                    std::max(std::max(sy0, sy1), std::max(sy2, sy3)) < 0.0f ||
+                    std::min(std::min(sy0, sy1), std::min(sy2, sy3)) > sH) {
+                    continue;
+                }
+
+                BlitMapTileBlended(tx + 12 * ty, sx0, sy0, sx1, sy1, sx2, sy2, sx3, sy3, 1.0f);
+            }
+        }
+    }
+
     // 1. Draw Wanted Search Area & Heat Area on Pause ESC Map
     if (g_wantedActive && g_config.enableWantedSearchRadius && g_config.showHeatOnMap) {
         CVector2D centerRadarSpace;
