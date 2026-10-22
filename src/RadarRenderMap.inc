@@ -34,6 +34,15 @@ void Radar::DrawMap2D(const CRect& rect, float alpha) {
     unsigned char tileAlpha = (unsigned char)(255.0f * unifiedMapOpacity);
     CRGBA tileColor(255, 255, 255, tileAlpha);
 
+    // Water is day/night blended once per frame, matching the custom tile crossfade.
+    float seaNightBlend = GetDayNightBlend();
+    CRGBA seaCol = CRGBA(
+        (unsigned char)Lerpf((float)g_config.radarSeaColor.r, (float)g_config.radarSeaColorNight.r, seaNightBlend),
+        (unsigned char)Lerpf((float)g_config.radarSeaColor.g, (float)g_config.radarSeaColorNight.g, seaNightBlend),
+        (unsigned char)Lerpf((float)g_config.radarSeaColor.b, (float)g_config.radarSeaColorNight.b, seaNightBlend),
+        (unsigned char)Lerpf((float)g_config.radarSeaColor.a, (float)g_config.radarSeaColorNight.a, seaNightBlend)
+    );
+
     auto setMapVert = [](RwIm2DVertex& v, float sx, float sy, float uTex, float vTex, const CRGBA& col) {
         RwIm2DVertexSetScreenX(&v, sx);
         RwIm2DVertexSetScreenY(&v, sy);
@@ -75,7 +84,7 @@ void Radar::DrawMap2D(const CRect& rect, float alpha) {
             if (tx < 0 || tx >= 12 || ty < 0 || ty >= 12) {
                 if (g_config.fillEmptySea) {
                     RwIm2DVertex verts[4];
-                    CRGBA flatSeaCol = ModColor(g_config.radarSeaColor, unifiedMapOpacity);
+                    CRGBA flatSeaCol = ModColor(seaCol, unifiedMapOpacity);
                     setMapVert(verts[0], sx0, sy0, 0.0f, 1.0f, flatSeaCol);
                     setMapVert(verts[1], sx1, sy1, 1.0f, 1.0f, flatSeaCol);
                     setMapVert(verts[2], sx3, sy3, 0.0f, 0.0f, flatSeaCol);
@@ -95,7 +104,7 @@ void Radar::DrawMap2D(const CRect& rect, float alpha) {
             // Item 8: Fill water base under map tiles with minimap.radar.sea (#5daece)
             if (g_config.fillEmptySea) {
                 RwIm2DVertex verts[4];
-                CRGBA flatSeaCol = ModColor(g_config.radarSeaColor, unifiedMapOpacity);
+                CRGBA flatSeaCol = ModColor(seaCol, unifiedMapOpacity);
                 setMapVert(verts[0], sx0, sy0, 0.0f, 1.0f, flatSeaCol);
                 setMapVert(verts[1], sx1, sy1, 1.0f, 1.0f, flatSeaCol);
                 setMapVert(verts[2], sx3, sy3, 0.0f, 0.0f, flatSeaCol);

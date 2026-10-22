@@ -192,6 +192,9 @@ void Radar::Init() {
     ApplyWantedPatches();
     g_radarDead = false;
     g_warmupFrames = 0;
+    for (int i = 0; i < (int)HudModuleId::Count; ++i) {
+        g_moduleAlpha[i] = 1.0f;
+    }
     g_curDist = g_config.radarZoom;
     float elevDeg = g_config.radarTiltDeg;
     float pitchDeg = 90.0f - elevDeg;

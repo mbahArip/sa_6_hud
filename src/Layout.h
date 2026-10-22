@@ -382,4 +382,167 @@ inline LayoutResult SolveLayout(
     return res;
 }
 
+// Same as SolveLayout, but each group slot only reserves its (height + gap) proportionally
+// to its current visibility alpha. Hidden modules therefore collapse out of the stack and
+// the modules above/below slide in to close the gap. Free-mode modules are unaffected.
+inline LayoutResult SolveAnimatedLayout(
+    const ModulePositionConfig configs[(int)HudModuleId::Count],
+    const float alphas[(int)HudModuleId::Count],
+    float sW,
+    float sH,
+    float radarScale = 1.0f
+) {
+    LayoutResult res;
+    if (sW < 10.0f || sH < 10.0f) return res;
+
+    float radarW  = sH * 0.3230f * radarScale;
+    float radarH  = radarW * (9.0f / 16.0f);
+    float navH    = sH * 0.064f * radarScale;
+    float locH    = sH * 0.040f * radarScale;
+    float vehH    = sH * 0.115f * radarScale;
+    float hpW     = 120.0f * (sH / 720.0f);
+    float hpH     = 18.0f * (sH / 720.0f);
+    float wantedW = 150.0f * (sH / 720.0f);
+    float wantedH = 49.0f * (sH / 720.0f);
+    float wepW    = 120.0f * (sH / 720.0f);
+    float wepH    = 76.0f * (sH / 720.0f);
+    float moneyW  = 140.0f * (sH / 720.0f);
+    float moneyH  = 24.0f * (sH / 720.0f);
+
+    auto GetDim = [&](HudModuleId id, float& outW, float& outH) {
+        switch (id) {
+            case HudModuleId::Radar:       outW = radarW;  outH = radarH;  break;
+            case HudModuleId::GpsNav:      outW = radarW;  outH = navH;    break;
+            case HudModuleId::PlaceInfo:   outW = radarW;  outH = locH;    break;
+            case HudModuleId::VehicleInfo: outW = radarW;  outH = vehH;    break;
+            case HudModuleId::HealthArmor: outW = hpW;     outH = hpH;     break;
+            case HudModuleId::Wanted:      outW = wantedW; outH = wantedH; break;
+            case HudModuleId::WeaponHud:   outW = wepW;    outH = wepH;    break;
+            case HudModuleId::MoneyHud:    outW = moneyW;  outH = moneyH;  break;
+            default:                       outW = 100.0f;  outH = 50.0f;   break;
+        }
+    };
+
+    // 1. Free elements are absolute: alpha does not move them.
+    for (int i = 0; i < (int)HudModuleId::Count; ++i) {
+        if (configs[i].mode != PositionMode::Free) continue;
+
+        float w = 0.0f, h = 0.0f;
+        GetDim((HudModuleId)i, w, h);
+
+        float posFx = 0.0f, posFy = 0.0f;
+        GetAnchorFactors(configs[i].posAnchor, posFx, posFy);
+        float elemFx = 0.0f, elemFy = 0.0f;
+        GetAnchorFactors(configs[i].elementAnchor, elemFx, elemFy);
+
+        float targetX = sW * posFx + configs[i].offsetX;
+        float targetY = sH * posFy - configs[i].offsetY;
+
+        float left = targetX - (w * elemFx);
+        float top  = targetY - (h * elemFy);
+        res.rects[i] = CRect(left, top, left + w, top + h);
+    }
+
+    // 2. Group elements: reserve (height + gap) * alpha so hidden slots collapse.
+    struct GroupItem {
+        HudModuleId id;
+        int         groupIndex;
+        float       width;
+        float       height;
+        float       alpha;
+    };
+
+    std::vector<GroupItem> groups[4];
+
+    for (int i = 0; i < (int)HudModuleId::Count; ++i) {
+        if (configs[i].mode != PositionMode::Group) continue;
+
+        int gIdx = (int)configs[i].group;
+        if (gIdx < 0 || gIdx >= 4) gIdx = 0;
+
+        float w = 0.0f, h = 0.0f;
+        GetDim((HudModuleId)i, w, h);
+
+        float a = alphas[i];
+        if (a < 0.0f) a = 0.0f;
+        if (a > 1.0f) a = 1.0f;
+
+        groups[gIdx].push_back({ (HudModuleId)i, configs[i].groupIndex, w, h, a });
+    }
+
+    for (int g = 0; g < 4; ++g) {
+        std::sort(groups[g].begin(), groups[g].end(), [](const GroupItem& a, const GroupItem& b) {
+            if (a.groupIndex != b.groupIndex) return a.groupIndex < b.groupIndex;
+            return (int)a.id < (int)b.id;
+        });
+    }
+
+    // Group 0: Minimap (Bottom-Left, stacks upward)
+    {
+        float pad = 16.0f * (sH / 720.0f);
+        if (pad < 16.0f) pad = 16.0f;
+        float gap = sH * 0.008f * radarScale;
+        float curBottom = sH - pad;
+
+        for (const auto& item : groups[(int)HudGroup::Minimap]) {
+            float left   = pad;
+            float top    = curBottom - item.height;
+            float right  = left + item.width;
+            res.rects[(int)item.id] = CRect(left, top, right, curBottom);
+            curBottom -= (item.height + gap) * item.alpha;
+        }
+    }
+
+    // Group 1: Status (Top-Left, stacks downward)
+    {
+        float pad = 16.0f * (sH / 720.0f);
+        if (pad < 16.0f) pad = 16.0f;
+        float gap = 8.0f * (sH / 720.0f);
+        float curTop = pad;
+
+        for (const auto& item : groups[(int)HudGroup::Status]) {
+            float left   = pad;
+            float right  = left + item.width;
+            float bottom = curTop + item.height;
+            res.rects[(int)item.id] = CRect(left, curTop, right, bottom);
+            curTop += (item.height + gap) * item.alpha;
+        }
+    }
+
+    // Group 2: Criminal (Top-Right, stacks downward)
+    {
+        float rightMargin = 28.0f * (sW / 1280.0f);
+        float topMargin   = 26.0f * (sH / 720.0f);
+        float gap         = 8.0f * (sH / 720.0f);
+        float curTop      = topMargin;
+        float right       = sW - rightMargin;
+
+        for (const auto& item : groups[(int)HudGroup::Criminal]) {
+            float left   = right - item.width;
+            float bottom = curTop + item.height;
+            res.rects[(int)item.id] = CRect(left, curTop, right, bottom);
+            curTop += (item.height + gap) * item.alpha;
+        }
+    }
+
+    // Group 3: Notification (Bottom-Right, stacks upward)
+    {
+        float rightMargin = 28.0f * (sW / 1280.0f);
+        float pad         = 16.0f * (sH / 720.0f);
+        if (pad < 16.0f) pad = 16.0f;
+        float gap         = 8.0f * (sH / 720.0f);
+        float curBottom   = sH - pad;
+        float right       = sW - rightMargin;
+
+        for (const auto& item : groups[(int)HudGroup::Notification]) {
+            float left   = right - item.width;
+            float top    = curBottom - item.height;
+            res.rects[(int)item.id] = CRect(left, top, right, curBottom);
+            curBottom -= (item.height + gap) * item.alpha;
+        }
+    }
+
+    return res;
+}
+
 } // namespace hud6

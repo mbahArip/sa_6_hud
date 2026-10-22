@@ -84,7 +84,7 @@ static void DrawHeatBadges(bool wantedGaugeDrawn) {
     float badgeH = 15.0f * (screenH / 720.0f);
     float badgeGap = 5.0f * (screenW / 1280.0f);
 
-    CRect wantedRect = g_moduleRects[(int)HudModuleId::Wanted];
+    CRect wantedRect = g_animatedModuleRects[(int)HudModuleId::Wanted];
     float starSlotH = starSize + 6.0f * (screenH / 720.0f);
     float wantedEase = g_wantedAnimProgress * g_wantedAnimProgress * (3.0f - 2.0f * g_wantedAnimProgress);
     if (isPreview) wantedEase = 1.0f; // preview must show resting stack, not collapsed-on-stars
@@ -192,7 +192,7 @@ static void DrawInvestigationGauge() {
     float starSize = 22.0f * (screenH / 720.0f);
     float starSpacing = starSize * 1.15f;
 
-    CRect wantedRect = g_moduleRects[(int)HudModuleId::Wanted];
+    CRect wantedRect = g_animatedModuleRects[(int)HudModuleId::Wanted];
     float totalGroupW = 5.0f * starSpacing + starSize;
     float startX = wantedRect.right - totalGroupW;
     float topMargin = wantedRect.top;
@@ -288,7 +288,7 @@ static void Hooked_DrawWanted() {
     float starSize = 22.0f * (screenH / 720.0f);
     float starSpacing = starSize * 1.15f;
 
-    CRect wantedRect = g_moduleRects[(int)HudModuleId::Wanted];
+    CRect wantedRect = g_animatedModuleRects[(int)HudModuleId::Wanted];
     float totalGroupW = 5.0f * starSpacing + starSize;
     float startX = wantedRect.right - totalGroupW;
     float topMargin = wantedRect.top;

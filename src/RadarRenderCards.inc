@@ -8,13 +8,21 @@ void Radar::DrawInfoCards(const CRect& rect, float alpha) {
     float cardScale = g_config.radarSizeScale;
     float cardCornerRad = Radius() * 0.5f;
 
+    // Publish live visibility so the group stack solver can collapse hidden slots.
+    g_moduleAlpha[(int)HudModuleId::GpsNav]      = s_navAlpha;
+    g_moduleAlpha[(int)HudModuleId::PlaceInfo]   = s_locAlpha;
+    g_moduleAlpha[(int)HudModuleId::VehicleInfo] = s_vehCardAlpha;
+
+    // Preview shows the resting layout; gameplay uses the alpha-collapsed stack.
+    const CRect* rects = isPreview ? g_moduleRects : g_animatedModuleRects;
+
     // =========================================================================
     // LAYER 3 (Bottom of stack, directly above radar frame): GPS Turn Navigator
     // =========================================================================
     float navH = sH * 0.064f * cardScale;
     float navAlphaMod = isPreview ? 1.0f : (alpha * s_navAlpha);
 
-    CRect navRect = g_moduleRects[(int)HudModuleId::GpsNav];
+    CRect navRect = rects[(int)HudModuleId::GpsNav];
     float navCardX = navRect.left;
     float navCardY = navRect.top;
     float navCardW = navRect.right - navRect.left;
@@ -88,7 +96,7 @@ void Radar::DrawInfoCards(const CRect& rect, float alpha) {
     float locH = sH * 0.038f * cardScale;
     float locAlphaMod = isPreview ? 1.0f : ((alpha > 0.005f) ? (alpha * s_locAlpha) : s_locAlpha);
 
-    CRect locRect = g_moduleRects[(int)HudModuleId::PlaceInfo];
+    CRect locRect = rects[(int)HudModuleId::PlaceInfo];
     float locCardX = locRect.left;
     float locCardY = locRect.top;
     float locCardW = locRect.right - locRect.left;
@@ -167,7 +175,7 @@ void Radar::DrawInfoCards(const CRect& rect, float alpha) {
     // =========================================================================
     float vehAlphaMod = isPreview ? 1.0f : ((alpha > 0.005f) ? (alpha * s_vehCardAlpha) : s_vehCardAlpha);
     if (vehAlphaMod > 0.005f) {
-        CRect vehCardRect = g_moduleRects[(int)HudModuleId::VehicleInfo];
+        CRect vehCardRect = rects[(int)HudModuleId::VehicleInfo];
         float vehCardX = vehCardRect.left;
         float vehCardW = vehCardRect.right - vehCardRect.left;
         float cardTop = vehCardRect.top;

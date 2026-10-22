@@ -13,6 +13,8 @@ static float s_renderMoney      = -1.0f;
 static int   s_lastMoney        = 0;
 static bool  s_moneyInitialized = false;
 
+static float s_wepSlotProgress  = 0.0f;
+
 static void DrawTopRightHUD(float masterAlpha) {
     CPlayerPed* player = FindPlayerPed(0);
     bool isPreview = Menu::IsLayoutPreview();
@@ -20,9 +22,6 @@ static void DrawTopRightHUD(float masterAlpha) {
 
     float sW = ScreenW();
     float sH = ScreenH();
-    float rightMargin = 28.0f * (sW / 1280.0f);
-    float rightEdge = sW - rightMargin;
-    float topMargin = 26.0f * (sH / 720.0f);
 
     float dt = CTimer::ms_fTimeStep * 0.02f;
     if (dt <= 0.0f || dt > 0.1f) dt = 0.0166f;
@@ -117,8 +116,6 @@ static void DrawTopRightHUD(float masterAlpha) {
         return c * c * (3.0f - 2.0f * c);
     };
 
-    static float s_wepSlotProgress = 0.0f;
-
     // When Show HUD key ('J') activates while elements are hidden, pre-expand slots while opacity is 0
     if (g_hudShowAll && s_weaponFadeAlpha <= 0.05f) {
         s_wepSlotProgress = 1.0f;
@@ -148,51 +145,24 @@ static void DrawTopRightHUD(float masterAlpha) {
     float ammoEase   = Smoothstep(g_ammoSlideProgress);
     float iconEase   = Smoothstep(s_wepSlotProgress);
 
-    float starSize    = 22.0f * (sH / 720.0f);
-    float starSlotH   = starSize + 6.0f * (sH / 720.0f);
-    float badgeH      = 15.0f * (sH / 720.0f);
-    float badgeSlotH  = badgeH + 6.0f * (sH / 720.0f);
     float ammoSlotH   = 26.0f * (sH / 720.0f);
     float wepIconSize = 44.0f * (sH / 720.0f);
-    float iconSlotH   = wepIconSize + 8.0f * (sH / 720.0f);
 
-    float curY = topMargin;
+    // Publish live visibility so the group stack solver can collapse hidden slots.
+    g_moduleAlpha[(int)HudModuleId::Wanted]    = std::max(wantedEase, badgeEase);
+    g_moduleAlpha[(int)HudModuleId::WeaponHud] = std::max(ammoEase, iconEase);
+    g_moduleAlpha[(int)HudModuleId::MoneyHud]  = s_moneyFadeAlpha;
 
-    // 1. Wanted Stars offset
-    curY += starSlotH * wantedEase;
+    // Preview shows the resting layout; gameplay uses the alpha-collapsed group stack.
+    const CRect* rects = isPreview ? g_moduleRects : g_animatedModuleRects;
 
-    // 2. Criminal Profile Badges offset
-    curY += badgeSlotH * badgeEase;
-
-    // 3. Weapon Ammo position
-    float ammoY = curY;
-    curY += ammoSlotH * ammoEase;
-
-    // 4. Weapon Icon position
-    float iconY = curY;
-    curY += iconSlotH * iconEase;
-
-    // 5. Money Counter position
-    float moneyY = curY;
-
-    const Config& activeCfg = (Menu::IsOpen() ? g_pendingConfig : g_config);
-    bool freeWep   = (activeCfg.modulePositions[(int)HudModuleId::WeaponHud].mode == PositionMode::Free);
-    bool freeMoney = (activeCfg.modulePositions[(int)HudModuleId::MoneyHud].mode == PositionMode::Free);
-
-    float wepRightEdge = rightEdge;
-    if (freeWep || isPreview) {
-        CRect wepRc = g_moduleRects[(int)HudModuleId::WeaponHud];
-        wepRightEdge = wepRc.right;
-        ammoY = wepRc.top;
-        iconY = ammoY + ammoSlotH;
-    }
-
-    float moneyRightEdge = rightEdge;
-    if (freeMoney || isPreview) {
-        CRect monRc = g_moduleRects[(int)HudModuleId::MoneyHud];
-        moneyRightEdge = monRc.right;
-        moneyY = monRc.top;
-    }
+    CRect wepRc  = rects[(int)HudModuleId::WeaponHud];
+    CRect monRc  = rects[(int)HudModuleId::MoneyHud];
+    float wepRightEdge   = wepRc.right;
+    float moneyRightEdge = monRc.right;
+    float ammoY = wepRc.top;
+    float iconY = ammoY + ammoSlotH;
+    float moneyY = monRc.top;
 
     // =========================================================================
     // 3. Render Weapon Ammo & Weapon Icon
@@ -420,7 +390,7 @@ static void DrawTopLeftHealthBar(float alpha) {
     float sW = ScreenW();
     float sH = ScreenH();
 
-    CRect barRect = g_moduleRects[(int)HudModuleId::HealthArmor];
+    CRect barRect = g_animatedModuleRects[(int)HudModuleId::HealthArmor];
     float barX = barRect.left;
     float barY = barRect.top;
     float barW = barRect.right - barRect.left;
