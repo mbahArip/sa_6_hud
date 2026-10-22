@@ -8,6 +8,10 @@ void Radar::DrawOverlay() {
         DrawTopLeftHealthBar(1.0f);
     }
 
+    // Wanted gauge normally renders from the game's HUD pass (hook on 0x58D9A0), which the
+    // open menu suppresses — draw it here so the Layout tab preview is complete.
+    if (isPreview) Hooked_DrawWanted();
+
     // Wanted overlays are gameplay-critical — draw them regardless of radar fade state
     CPlayerPed* player = FindPlayerPed(0);
     bool wantedActive = (player && player->m_pPlayerData && player->m_pPlayerData->m_pWanted
