@@ -74,7 +74,7 @@ struct Config {
     float  radarOpacity             = 0.65f;                 // Radar master opacity multiplier (0.10 = 10%, 0.65 = 65% default, 1.00 = 100%)
     CRGBA  backdropColor            = { 14, 18, 24, 255 };   // Dark acrylic radar backdrop color (R, G, B)
     float  backdropOpacity          = 1.00f;                 // Radar background opacity (0.0 = fully transparent, 1.0 = solid)
-    bool   useCustomMapTile         = true;                  // USE_CUSTOM_MAP_TILE (load custom png tiles from assets/radar/map if true; vanilla TXD if false)
+    bool   useCustomMapTile         = false;                 // USE_CUSTOM_MAP_TILE (load custom png tiles from assets/radar/map if true; vanilla TXD if false)
     bool   fillEmptySea             = true;                  // Fill empty/unstreamed radar map bounds outside 12x12 grid with sea water color (1 = on, 0 = off)
     CRGBA  radarSeaColor            = { 93, 174, 206, 255 }; // #5daece (minimap.radar.sea)
     float  closedSpaceZoomMultiplier= 0.9f;                  // CLOSED_SPACE_ZOOM_MULTIPLIER
