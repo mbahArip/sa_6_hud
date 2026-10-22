@@ -87,6 +87,7 @@ static void DrawHeatBadges(bool wantedGaugeDrawn) {
     CRect wantedRect = g_moduleRects[(int)HudModuleId::Wanted];
     float starSlotH = starSize + 6.0f * (screenH / 720.0f);
     float wantedEase = g_wantedAnimProgress * g_wantedAnimProgress * (3.0f - 2.0f * g_wantedAnimProgress);
+    if (isPreview) wantedEase = 1.0f; // preview must show resting stack, not collapsed-on-stars
     float badgeY = wantedRect.top + starSlotH * wantedEase;
     float startX = wantedRect.right;
     float badgeAlpha = isPreview ? 1.0f : std::clamp(g_heatBadgeAnimProgress, 0.0f, 1.0f);

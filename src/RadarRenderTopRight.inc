@@ -180,7 +180,7 @@ static void DrawTopRightHUD(float masterAlpha) {
     bool freeMoney = (activeCfg.modulePositions[(int)HudModuleId::MoneyHud].mode == PositionMode::Free);
 
     float wepRightEdge = rightEdge;
-    if (freeWep) {
+    if (freeWep || isPreview) {
         CRect wepRc = g_moduleRects[(int)HudModuleId::WeaponHud];
         wepRightEdge = wepRc.right;
         ammoY = wepRc.top;
@@ -188,7 +188,7 @@ static void DrawTopRightHUD(float masterAlpha) {
     }
 
     float moneyRightEdge = rightEdge;
-    if (freeMoney) {
+    if (freeMoney || isPreview) {
         CRect monRc = g_moduleRects[(int)HudModuleId::MoneyHud];
         moneyRightEdge = monRc.right;
         moneyY = monRc.top;
