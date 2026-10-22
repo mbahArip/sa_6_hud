@@ -8,7 +8,7 @@ void Radar::Render() {
     CHud::bScriptDontDisplayRadar = true;
     CHud::bDrawClock = false;
 
-    if (!GameplayRunning() || g_warmupFrames < 10) return;
+    if ((!GameplayRunning() && !Menu::IsLayoutPreview()) || g_warmupFrames < 10) return;
 
     CPlayerPed* player = FindPlayerPed(0);
     if (!player || !Scene.m_pWorld) return;

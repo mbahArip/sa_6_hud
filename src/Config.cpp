@@ -350,7 +350,7 @@ void LoadConfig() {
     if (g_config.radarOpacity < 0.1f) g_config.radarOpacity = 0.10f;
     g_config.fillEmptySea        = readInt("radar", "fill_empty_sea", 1) != 0;
     int customTileVal = readInt("Minimap.Radar", "USE_CUSTOM_MAP_TILE", -999999);
-    if (customTileVal == -999999) customTileVal = readInt("radar", "use_custom_map_tile", 1);
+    if (customTileVal == -999999) customTileVal = readInt("radar", "use_custom_map_tile", 0);
     g_config.useCustomMapTile    = (customTileVal != 0);
     g_config.enableBackdropBlur  = readInt("radar", "enable_backdrop_blur", 1) != 0;
     int bq = readInt("Global", "BACKDROP_BLUR_QUALITY", -999999);
