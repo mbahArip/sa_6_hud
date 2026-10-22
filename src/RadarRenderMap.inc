@@ -143,6 +143,9 @@ void Radar::DrawMap2D(const CRect& rect, float alpha) {
                     dev->SetTexture(0, pTex);
                     dev->SetSamplerState(0, D3DSAMP_MINFILTER, D3DTEXF_LINEAR);
                     dev->SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+                    // Tiles are 512x512 drawn at ~150px, so mip selection would pick a heavily
+                    // downsampled level and the map reads as blurry. Force the top mip.
+                    dev->SetSamplerState(0, D3DSAMP_MIPFILTER, D3DTEXF_NONE);
                     dev->SetSamplerState(0, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
                     dev->SetSamplerState(0, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
 
