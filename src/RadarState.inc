@@ -1,5 +1,8 @@
 static CRect   g_radarRect;
 static CRect   g_moduleRects[(int)HudModuleId::Count];
+// Alpha-weighted group stacking: hidden modules collapse so the rest slide to close the gap.
+static float   g_moduleAlpha[(int)HudModuleId::Count];
+static CRect   g_animatedModuleRects[(int)HudModuleId::Count];
 static CVector g_playerPos;
 static CVector g_playerFwd;
 static CVector g_camRight, g_camUp;

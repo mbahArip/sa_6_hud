@@ -336,7 +336,8 @@ void LoadConfig() {
     if (maxAlt < 0.0f) maxAlt = readFloat("radar", "altitude_max_height", 250.0f);
     g_config.altitudeMaxHeight   = maxAlt;
 
-    g_config.radarSeaColor       = readColor("minimap.radar", "sea", { 93, 174, 206, 255 });
+    g_config.radarSeaColor       = readColor("minimap.radar", "sea", { 134, 174, 191, 255 });
+    g_config.radarSeaColorNight  = readColor("minimap.radar", "sea_night", { 92, 87, 149, 255 });
     g_config.experimentalShow3dObjects = readInt("Minimap.Radar", "EXPERIMENTAL_SHOW_3D_OBJECTS", 0) != 0;
     g_config.color3dObjects      = readColor("minimap.radar", "3d_objects", { 201, 201, 196, 180 });
 
@@ -884,6 +885,7 @@ void SaveConfig() {
     writeInt("Minimap.Radar", "LOCK_PLAYER_ELEVATION", g_config.lockPlayerElevation ? 1 : 0);
     writeFloat("Minimap.Radar", "RADAR_OPACITY", g_config.radarOpacity * 100.0f, "%.0f");
     writeColor("minimap.radar", "sea", g_config.radarSeaColor);
+    writeColor("minimap.radar", "sea_night", g_config.radarSeaColorNight);
     writeInt("Minimap.Radar", "EXPERIMENTAL_SHOW_3D_OBJECTS", g_config.experimentalShow3dObjects ? 1 : 0);
     writeColor("minimap.radar", "3d_objects", g_config.color3dObjects);
     writeInt("Minimap.Radar", "USE_CUSTOM_MAP_TILE", g_config.useCustomMapTile ? 1 : 0);

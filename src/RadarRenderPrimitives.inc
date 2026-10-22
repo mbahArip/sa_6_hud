@@ -8,9 +8,11 @@ static void UpdateRadarRect() {
 
     const Config& activeCfg = (Menu::IsOpen() ? g_pendingConfig : g_config);
     LayoutResult layout = SolveLayout(activeCfg.modulePositions, sW, sH, activeCfg.radarSizeScale);
+    LayoutResult anim   = SolveAnimatedLayout(activeCfg.modulePositions, g_moduleAlpha, sW, sH, activeCfg.radarSizeScale);
 
     for (int i = 0; i < (int)HudModuleId::Count; ++i) {
-        g_moduleRects[i] = layout.rects[i];
+        g_moduleRects[i]         = layout.rects[i];
+        g_animatedModuleRects[i] = anim.rects[i];
     }
     g_radarRect = g_moduleRects[(int)HudModuleId::Radar];
 }
