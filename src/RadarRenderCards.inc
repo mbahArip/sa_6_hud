@@ -4,26 +4,17 @@ void Radar::DrawInfoCards(const CRect& rect, float alpha) {
 
     if (isPreview) alpha = 1.0f;
 
-    float sW = ScreenW();
     float sH = ScreenH();
-    float radarW = rect.right - rect.left;
-    float radarX = rect.left;
-    float radarY = rect.top;
     float cardScale = g_config.radarSizeScale;
-    float gap    = sH * 0.008f * cardScale;
     float cardCornerRad = Radius() * 0.5f;
-
-    const Config& activeCfg = (Menu::IsOpen() ? g_pendingConfig : g_config);
 
     // =========================================================================
     // LAYER 3 (Bottom of stack, directly above radar frame): GPS Turn Navigator
     // =========================================================================
     float navH = sH * 0.064f * cardScale;
     float navAlphaMod = isPreview ? 1.0f : (alpha * s_navAlpha);
-    float navY = radarY - navH - gap;
 
-    bool freeNav = (activeCfg.modulePositions[(int)HudModuleId::GpsNav].mode == PositionMode::Free);
-    CRect navRect = freeNav ? g_moduleRects[(int)HudModuleId::GpsNav] : CRect(radarX, navY, radarX + radarW, navY + navH);
+    CRect navRect = g_moduleRects[(int)HudModuleId::GpsNav];
     float navCardX = navRect.left;
     float navCardY = navRect.top;
     float navCardW = navRect.right - navRect.left;
@@ -96,13 +87,8 @@ void Radar::DrawInfoCards(const CRect& rect, float alpha) {
     // =========================================================================
     float locH = sH * 0.038f * cardScale;
     float locAlphaMod = isPreview ? 1.0f : ((alpha > 0.005f) ? (alpha * s_locAlpha) : s_locAlpha);
-    float pad = 6.0f * (sH / 720.0f) * cardScale;
-    if (pad < 4.0f) pad = 4.0f;
-    float locBaseY = (alpha > 0.005f) ? (radarY - (navH + gap) * s_navAlpha) : (sH - pad);
-    float locY = locBaseY - locH - gap;
 
-    bool freeLoc = (activeCfg.modulePositions[(int)HudModuleId::PlaceInfo].mode == PositionMode::Free);
-    CRect locRect = freeLoc ? g_moduleRects[(int)HudModuleId::PlaceInfo] : CRect(radarX, locY, radarX + radarW, locY + locH);
+    CRect locRect = g_moduleRects[(int)HudModuleId::PlaceInfo];
     float locCardX = locRect.left;
     float locCardY = locRect.top;
     float locCardW = locRect.right - locRect.left;
@@ -181,19 +167,11 @@ void Radar::DrawInfoCards(const CRect& rect, float alpha) {
     // =========================================================================
     float vehAlphaMod = isPreview ? 1.0f : ((alpha > 0.005f) ? (alpha * s_vehCardAlpha) : s_vehCardAlpha);
     if (vehAlphaMod > 0.005f) {
-        float vehH = sH * 0.115f * cardScale;
-        float vehBaseY = (alpha > 0.005f)
-            ? (radarY - (navH + gap) * s_navAlpha - (locH + gap) * s_locAlpha - gap)
-            : (locY - gap);
-        float cardTop = vehBaseY - vehH;
-        float cardBottom = vehBaseY;
-
-        bool freeVeh = (activeCfg.modulePositions[(int)HudModuleId::VehicleInfo].mode == PositionMode::Free);
-        CRect vehCardRect = freeVeh ? g_moduleRects[(int)HudModuleId::VehicleInfo] : CRect(radarX, cardTop, radarX + radarW, cardBottom);
+        CRect vehCardRect = g_moduleRects[(int)HudModuleId::VehicleInfo];
         float vehCardX = vehCardRect.left;
         float vehCardW = vehCardRect.right - vehCardRect.left;
-        cardTop = vehCardRect.top;
-        cardBottom = vehCardRect.bottom;
+        float cardTop = vehCardRect.top;
+        float cardBottom = vehCardRect.bottom;
 
         float splitY = cardTop + sH * 0.063f * cardScale;
         CRect top2_3Rect(vehCardX, cardTop, vehCardX + vehCardW, splitY);

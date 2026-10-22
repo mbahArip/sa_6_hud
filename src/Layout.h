@@ -139,7 +139,7 @@ inline const char* GetModuleName(HudModuleId id) {
 
 inline const char* GetModuleDisplayName(HudModuleId id) {
     switch (id) {
-        case HudModuleId::Radar:       return "Radar / Minimap";
+        case HudModuleId::Radar:       return "Radar";
         case HudModuleId::GpsNav:      return "GPS Navigation Card";
         case HudModuleId::PlaceInfo:   return "Place Information Card";
         case HudModuleId::VehicleInfo: return "Vehicle Information Card";
