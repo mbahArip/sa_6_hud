@@ -164,6 +164,13 @@ static void DrawHeatBadges(bool wantedGaugeDrawn) {
     }
 }
 
+// Wanted star state tints. One texture is drawn in every state; only the diffuse
+// color differs, so the D3D modulate stage does the recolor.
+static const CRGBA kStarTintActive  (255, 255, 255);
+static const CRGBA kStarTintSlot    ( 50,  50,  50);
+static const CRGBA kStarTintHeat    (255,  31,  38);
+static const CRGBA kStarTintLooking (147, 149, 152);
+
 static void DrawInvestigationGauge() {
     if (!g_config.useCriminalProfile) return;
     bool onMission = CTheScripts::IsPlayerOnAMission();
@@ -209,15 +216,16 @@ static void DrawInvestigationGauge() {
 
         bool isActive = (i >= (6 - starsCount));
         if (isActive) {
-            IDirect3DTexture9* pActiveTex = g_pTexStarLooking ? g_pTexStarLooking : g_pTexStarHeat;
-            if (pActiveTex) {
-                DrawD3DTexturedQuad(pActiveTex, x, y, starSize, starSize, CRGBA(255, 255, 255, activeA));
+            if (g_pTexStarBase) {
+                DrawD3DTexturedQuad(g_pTexStarBase, x, y, starSize, starSize,
+                                    CRGBA(kStarTintLooking.r, kStarTintLooking.g, kStarTintLooking.b, activeA));
             } else {
                 CHud::Sprites[2].Draw(CRect(x, y, x + starSize, y + starSize), CRGBA(100, 180, 255, activeA));
             }
         } else {
             if (g_pTexStarBase) {
-                DrawD3DTexturedQuad(g_pTexStarBase, x, y, starSize, starSize, CRGBA(255, 255, 255, inactiveA));
+                DrawD3DTexturedQuad(g_pTexStarBase, x, y, starSize, starSize,
+                                    CRGBA(kStarTintSlot.r, kStarTintSlot.g, kStarTintSlot.b, inactiveA));
             } else {
                 CHud::Sprites[2].Draw(CRect(x, y, x + starSize, y + starSize), CRGBA(255, 255, 255, inactiveA));
             }
@@ -366,23 +374,30 @@ static void Hooked_DrawWanted() {
         float y = topMargin;
 
         bool isActive = (i >= (6 - effectiveWanted));
+        // No-info slots show only the hollow border, never the filled star behind it.
+        bool isHollowSlot = isActive && isHollowState;
 
         // 1. Inactive background base star for slot
-        if (g_pTexStarBase) {
-            DrawD3DTexturedQuad(g_pTexStarBase, x, y, starSize, starSize, CRGBA(255, 255, 255, inactiveA));
-        } else {
-            CHud::Sprites[2].Draw(CRect(x, y, x + starSize, y + starSize), CRGBA(255, 255, 255, inactiveA));
+        if (!isHollowSlot) {
+            if (g_pTexStarBase) {
+                DrawD3DTexturedQuad(g_pTexStarBase, x, y, starSize, starSize,
+                                    CRGBA(kStarTintSlot.r, kStarTintSlot.g, kStarTintSlot.b, inactiveA));
+            } else {
+                CHud::Sprites[2].Draw(CRect(x, y, x + starSize, y + starSize), CRGBA(255, 255, 255, inactiveA));
+            }
         }
 
         if (isActive) {
+            // No-info slots show the hollow border texture instead of the filled star.
             IDirect3DTexture9* pActiveTex = g_pTexStarBase;
+            CRGBA tint = kStarTintActive;
             if (isHollowState) {
-                pActiveTex = g_pTexStarNoInfo ? g_pTexStarNoInfo : g_pTexStarBase;
+                pActiveTex = g_pTexStarBorder ? g_pTexStarBorder : g_pTexStarBase;
             } else if (g_wantedStage == WANTED_STAGE_HEAT) {
-                if (hasActiveProfile && g_pTexStarLooking) {
-                    pActiveTex = g_pTexStarLooking;
-                } else if (g_pTexStarHeat) {
-                    pActiveTex = g_pTexStarHeat;
+                if (hasActiveProfile) {
+                    tint = kStarTintLooking;
+                } else {
+                    tint = kStarTintHeat;
                 }
             }
 
@@ -436,7 +451,8 @@ static void Hooked_DrawWanted() {
                     // When blinking OFF during LKP, base star remains visible
                 } else {
                     if (pActiveTex) {
-                        DrawD3DTexturedQuad(pActiveTex, curX, curY, starSize, starSize, CRGBA(255, 255, 255, drawA));
+                        DrawD3DTexturedQuad(pActiveTex, curX, curY, starSize, starSize,
+                                            CRGBA(tint.r, tint.g, tint.b, drawA));
                     } else {
                         CHud::Sprites[2].Draw(CRect(curX, curY, curX + starSize, curY + starSize), CRGBA(255, 255, 255, drawA));
                     }
