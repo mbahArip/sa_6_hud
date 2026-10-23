@@ -47,13 +47,9 @@ void Radar::DrawMenuMapOverlay() {
                     { seaX3, seaY3, 0.0f, 1.0f, dwCol, 0.0f, 0.0f },
                     { seaX2, seaY2, 0.0f, 1.0f, dwCol, 0.0f, 0.0f },
                 };
-                dev->SetFVF(D3DFVF_2DVERT);
+                BeginRawD3DQuad(dev);
                 dev->SetTexture(0, NULL);
                 dev->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
-                dev->SetRenderState(D3DRS_ZENABLE, FALSE);
-                dev->SetRenderState(D3DRS_LIGHTING, FALSE);
-                dev->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
-                dev->SetPixelShader(NULL);
                 dev->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, quad, sizeof(D3D2DVert));
             }
         }

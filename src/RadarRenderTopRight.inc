@@ -353,6 +353,22 @@ static void DrawTopRightHUD(float masterAlpha) {
 
             // Wallet icon in gauge center
             if (g_pTexWallet) {
+                static int s_walletLogBudget = 3;
+                if (s_walletLogBudget > 0) {
+                    --s_walletLogBudget;
+                    IDirect3DDevice9* probeDev = (IDirect3DDevice9*)RwD3D9GetCurrentD3DDevice();
+                    IDirect3DVertexShader9* probeVS = nullptr;
+                    IDirect3DVertexDeclaration9* probeDecl = nullptr;
+                    if (probeDev) {
+                        probeDev->GetVertexShader(&probeVS);
+                        probeDev->GetVertexDeclaration(&probeDecl);
+                        if (probeVS) probeVS->Release();
+                        if (probeDecl) probeDecl->Release();
+                    }
+                    LogWrite("wallet: draw tex=%p rect=(%.1f,%.1f,%.1f,%.1f) alpha=%.2f vs=%p decl=%p",
+                             (void*)g_pTexWallet, gx - iconSize * 0.5f, gy - iconSize * 0.5f,
+                             iconSize, iconSize, currentMoneyAlpha, (void*)probeVS, (void*)probeDecl);
+                }
                 DrawD3DTexturedQuad(g_pTexWallet, gx - iconSize * 0.5f, gy - iconSize * 0.5f, iconSize, iconSize, CRGBA(255, 255, 255, (unsigned char)(255.0f * currentMoneyAlpha)));
             }
 

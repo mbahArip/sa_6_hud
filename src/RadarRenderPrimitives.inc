@@ -361,7 +361,7 @@ static void DrawD3DTexturedRoundedFill(IDirect3DDevice9* dev, IDirect3DTexture9*
         v.v = (py + vOffset) / sh;
     };
 
-    dev->SetFVF(D3DFVF_2DVERT);
+    BeginRawD3DQuad(dev);
     dev->SetTexture(0, tex);
     dev->SetSamplerState(0, D3DSAMP_MINFILTER, D3DTEXF_LINEAR);
     dev->SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
@@ -375,12 +375,8 @@ static void DrawD3DTexturedRoundedFill(IDirect3DDevice9* dev, IDirect3DTexture9*
     dev->SetTextureStageState(0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE);
     dev->SetTextureStageState(0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
 
-    dev->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
     dev->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
     dev->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
-    dev->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
-    dev->SetRenderState(D3DRS_ZENABLE, FALSE);
-    dev->SetRenderState(D3DRS_LIGHTING, FALSE);
 
     if (g_pBackdropBlurPS) {
         float cOffset[4] = { 1.0f / sw, 1.0f / sh, g_config.blurIntensity * 3.5f, 1.0f };
@@ -518,10 +514,18 @@ static void DrawSoftGlow(float cx, float cy, float radX, float radY, CRGBA cente
         RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDINVSRCALPHA);
 }
 
+// Segments are derived from the swept angle so a short arc stays smooth instead of
+// being a 24-gon sliver. Callers pass a floor; a full ring asks for the most.
 static void DrawArcStrip(float cx, float cy, float innerRad, float outerRad, float startAngleRad, float endAngleRad, CRGBA col, int segments = 24) {
-    if (outerRad <= innerRad || col.a == 0 || segments < 3) return;
-    if (segments > 36) segments = 36;
-    static RwIm2DVertex verts[80];
+    if (outerRad <= innerRad || col.a == 0) return;
+    const int kMaxSegments = 96;
+    float span = fabsf(endAngleRad - startAngleRad);
+    int autoSegments = (int)ceilf(span / (2.0f * kPi) * (float)kMaxSegments);
+    if (autoSegments > segments) segments = autoSegments;
+    if (segments < 3) return;
+    if (segments > kMaxSegments) segments = kMaxSegments;
+
+    static RwIm2DVertex verts[(kMaxSegments + 1) * 2];
     int vCount = 0;
     float delta = (endAngleRad - startAngleRad) / (float)segments;
     for (int i = 0; i <= segments; ++i) {

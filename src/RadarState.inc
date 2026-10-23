@@ -251,6 +251,32 @@ static void EnsureSoftGlowTexture() {
 
 static void DrawSoftGlow(float cx, float cy, float radX, float radY, CRGBA centerCol, int segments, bool additive);
 
+// Puts the device into a state where a raw D3D9 DrawPrimitiveUP quad is guaranteed
+// to render. RenderWare's RwIm2D path binds a vertex shader and vertex declaration
+// and leaves texture stages 1..3 enabled; SetFVF alone does not undo either, so a
+// raw quad submitted afterwards gets discarded or shaded wrong. Every raw-D3D draw
+// in this plugin goes through here first.
+static void BeginRawD3DQuad(IDirect3DDevice9* dev) {
+    if (!dev) return;
+    dev->SetVertexShader(nullptr);
+    dev->SetVertexDeclaration(nullptr);
+    dev->SetFVF(D3DFVF_2DVERT);
+    dev->SetPixelShader(nullptr);
+
+    for (DWORD stage = 1; stage < 4; ++stage) {
+        dev->SetTextureStageState(stage, D3DTSS_COLOROP, D3DTOP_DISABLE);
+        dev->SetTextureStageState(stage, D3DTSS_ALPHAOP, D3DTOP_DISABLE);
+    }
+
+    dev->SetRenderState(D3DRS_ALPHATESTENABLE, FALSE);
+    dev->SetRenderState(D3DRS_FILLMODE, D3DFILL_SOLID);
+    dev->SetRenderState(D3DRS_COLORWRITEENABLE, 0xF);
+    dev->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
+    dev->SetRenderState(D3DRS_ZENABLE, FALSE);
+    dev->SetRenderState(D3DRS_LIGHTING, FALSE);
+    dev->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
+}
+
 static void DrawD3DTexturedQuad(IDirect3DTexture9* pTex, float x, float y, float w, float h, CRGBA col) {
     if (!pTex || col.a == 0) return;
     IDirect3DDevice9* dev = (IDirect3DDevice9*)RwD3D9GetCurrentD3DDevice();
@@ -264,7 +290,7 @@ static void DrawD3DTexturedQuad(IDirect3DTexture9* pTex, float x, float y, float
         { x + w - 0.5f, y + h - 0.5f, 0.0f, 1.0f, dwCol, 1.0f, 1.0f },
     };
 
-    dev->SetFVF(D3DFVF_2DVERT);
+    BeginRawD3DQuad(dev);
     dev->SetTexture(0, pTex);
     dev->SetSamplerState(0, D3DSAMP_MINFILTER, D3DTEXF_LINEAR);
     dev->SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
@@ -279,13 +305,8 @@ static void DrawD3DTexturedQuad(IDirect3DTexture9* pTex, float x, float y, float
     dev->SetTextureStageState(0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE);
     dev->SetTextureStageState(0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
 
-    dev->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
     dev->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
     dev->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
-    dev->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
-    dev->SetRenderState(D3DRS_ZENABLE, FALSE);
-    dev->SetRenderState(D3DRS_LIGHTING, FALSE);
-    dev->SetPixelShader(NULL);
 
     dev->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, quad, sizeof(D3D2DVert));
     dev->SetTexture(0, NULL);
@@ -304,7 +325,7 @@ static void DrawD3DTexturedQuadAdditive(IDirect3DTexture9* pTex, float x, float 
         { x + w - 0.5f, y + h - 0.5f, 0.0f, 1.0f, dwCol, 1.0f, 1.0f },
     };
 
-    dev->SetFVF(D3DFVF_2DVERT);
+    BeginRawD3DQuad(dev);
     dev->SetTexture(0, pTex);
     dev->SetSamplerState(0, D3DSAMP_MINFILTER, D3DTEXF_LINEAR);
     dev->SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
@@ -319,13 +340,8 @@ static void DrawD3DTexturedQuadAdditive(IDirect3DTexture9* pTex, float x, float 
     dev->SetTextureStageState(0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE);
     dev->SetTextureStageState(0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
 
-    dev->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
     dev->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
     dev->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_ONE);
-    dev->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
-    dev->SetRenderState(D3DRS_ZENABLE, FALSE);
-    dev->SetRenderState(D3DRS_LIGHTING, FALSE);
-    dev->SetPixelShader(NULL);
 
     dev->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, quad, sizeof(D3D2DVert));
     dev->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
@@ -368,7 +384,7 @@ static void DrawD3DRotatedQuad(IDirect3DTexture9* pTex, float cx, float cy, floa
         { x3, y3, 0.0f, 1.0f, dwCol, 1.0f, 1.0f },
     };
 
-    dev->SetFVF(D3DFVF_2DVERT);
+    BeginRawD3DQuad(dev);
     dev->SetTexture(0, pTex);
     dev->SetSamplerState(0, D3DSAMP_MINFILTER, D3DTEXF_LINEAR);
     dev->SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
@@ -383,13 +399,8 @@ static void DrawD3DRotatedQuad(IDirect3DTexture9* pTex, float cx, float cy, floa
     dev->SetTextureStageState(0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE);
     dev->SetTextureStageState(0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
 
-    dev->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
     dev->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
     dev->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
-    dev->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
-    dev->SetRenderState(D3DRS_ZENABLE, FALSE);
-    dev->SetRenderState(D3DRS_LIGHTING, FALSE);
-    dev->SetPixelShader(NULL);
 
     dev->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, quad, sizeof(D3D2DVert));
     dev->SetTexture(0, NULL);
