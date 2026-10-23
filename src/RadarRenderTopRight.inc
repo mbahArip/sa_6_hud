@@ -121,7 +121,7 @@ static void DrawTopRightHUD(float masterAlpha) {
             if (s_weaponIdleTimer < 0.0f) s_weaponIdleTimer = 0.0f;
         }
 
-        showWep = (s_weaponIdleTimer > 0.0f) || isAiming || isFiring || g_hudShowAll;
+        showWep = g_config.alwaysShowWeapon || (s_weaponIdleTimer > 0.0f) || isAiming || isFiring || g_hudShowAll;
         if (showWep) {
             s_weaponFadeAlpha = std::min(1.0f, s_weaponFadeAlpha + rate);
         } else {
@@ -310,7 +310,7 @@ static void DrawTopRightHUD(float masterAlpha) {
         }
 
         bool isInterior = (CGame::currArea > 0) || (player->m_nAreaCode > 0);
-        bool showMoney = isInterior || g_hudShowAll || (s_moneyIdleTimer > 0.0f);
+        bool showMoney = g_config.alwaysShowMoney || isInterior || g_hudShowAll || (s_moneyIdleTimer > 0.0f);
 
         if (showMoney) {
             s_moneyFadeAlpha = std::min(1.0f, s_moneyFadeAlpha + dt / 0.25f);
