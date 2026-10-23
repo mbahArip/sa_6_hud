@@ -6,16 +6,26 @@ $exe  = "C:\Users\me\dev\sa_project\txd-cli\target\release\txd-cli.exe"
 
 # png (root of assets_raw) -> dest relative path under assets/, compression
 $jobs = @(
-    @("mission.png",           "blips\mission.dds",           "dxt5"),
-    @("north.png",             "blips\north.dds",             "dxt5"),
-    @("player.png",            "blips\player.dds",            "dxt5"),
-    @("zAbove.png",            "blips\z_above.dds",           "dxt5"),
-    @("zBelow.png",            "blips\z_below.dds",           "dxt5"),
-    @("ifruit.png",            "icons\ifruit.dds",            "dxt5"),
-    @("wallet.png",            "icons\wallet.dds",            "dxt5"),
-    @("wantedStar.png",        "icons\wantedStar.dds",        "dxt5"),
-    @("wantedStarBorder.png",  "icons\wantedStarBorder.dds",  "dxt5"),
-    @("policeArc.png",         "ui\cops_arrow.dds",           "dxt3")
+    # blips  (dxt5)
+    @("mission.png",           "blips\mission.dds",            "dxt5"),
+    @("north.png",             "blips\north.dds",              "dxt5"),
+    @("player.png",            "blips\player.dds",             "dxt5"),
+    @("zAbove.png",            "blips\z_above.dds",            "dxt5"),
+    @("zBelow.png",            "blips\z_below.dds",            "dxt5"),
+    # icons  (dxt5)
+    @("engine.png",            "icons\engine.dds",             "dxt5"),
+    @("fuel.png",              "icons\fuel.dds",               "dxt5"),
+    @("nitro.png",             "icons\nitro.dds",              "dxt5"),
+    @("ifruit.png",            "icons\ifruit.dds",             "dxt5"),
+    @("wallet.png",            "icons\wallet.dds",             "dxt5"),
+    @("wantedStar.png",        "icons\wantedStar.dds",         "dxt5"),
+    @("wantedStarBorder.png",  "icons\wantedStarBorder.dds",   "dxt5"),
+    @("profileIdentity.png",   "icons\profile\identity.dds",   "dxt5"),
+    @("profileOutfit.png",     "icons\profile\outfit.dds",     "dxt5"),
+    @("profileVehicle.png",    "icons\profile\vehicle.dds",    "dxt5"),
+    @("profileWeapon.png",     "icons\profile\weapon.dds",     "dxt5"),
+    # ui  (dxt3)
+    @("policeArc.png",         "ui\cops_arrow.dds",            "dxt3")
 )
 
 foreach ($j in $jobs) {
