@@ -22,6 +22,7 @@ public:
     static void DestroyShaders();
     static void OnD3dLost();
     static void OnD3dReset();
+    static void SyncModulePatches();
 
 private:
     static void UpdatePlayerData();

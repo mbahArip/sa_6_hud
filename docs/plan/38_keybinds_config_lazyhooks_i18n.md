@@ -116,38 +116,57 @@ When set, the element's idle decay is skipped so it never fades out.
 translation unit, so file-statics and the zero-call-site-churn property hold.
 
 ```
-src/core/           RadarState.inc RadarPatches.inc RadarHeatCore.inc
-                    Config.* Layout.h PatchRegistry
-src/ui/radar/       map, border, overlay, north, player, pin, menu map, lifecycle
-src/ui/gps/         GPS path render, distance, navigator
-src/ui/cards/       info cards, vehicle info
-src/ui/topright/    weapon, ammo, money
-src/ui/wanted/      stars, search area, heat area render
-src/ext/fuel/       consumption, pay-n-spray
-src/ext/heat_area/  escape stages
-src/ext/criminal/   profile, badges, identification
-src/ext/snitch/     civilian witness system
-src/ext/siren/      auras
-src/ext/arc/        threat arcs
+src/core/           RadarPatches.inc RadarState.inc RadarHeatCore.inc
+src/ui/primitives/  RadarRenderPrimitives.inc
+src/ui/radar/       RadarLifecycle.inc RadarGps.inc RadarProcess.inc
+                    RadarRenderMap.inc RadarRenderBase.inc RadarRenderNorth.inc
+                    RadarRenderPlayer.inc RadarRenderPin.inc
+                    RadarRenderOverlay.inc RadarRenderMenuMap.inc
+                    RadarRenderLifecycle.inc
+src/ui/gps/         RadarRenderGps.inc RadarRenderDistance.inc
+src/ui/cards/       RadarInfoCards.inc RadarInfoCardsUpdate.inc
+                    RadarRenderCards.inc
+src/ui/topright/    RadarRenderTopRight.inc
+src/ui/wanted/      RadarWanted.inc RadarWantedSearch.inc
+                    RadarRenderWanted.inc RadarRenderAuras.inc
+                    RadarRenderArcs.inc RadarRenderPolice.inc
+src/ext/heat/       RadarHeatTracking.inc
 ```
+
+`ext/heat` still carries the criminal-profile, snitch and TransFender code
+because those grew inside the same unit. Splitting them into `ext/criminal`,
+`ext/snitch` and `ext/fuel` is the next pass, done together with the per-module
+fine-tuning.
+
+Include order is preserved exactly as before: the units share file-static state,
+so a unit may only be included after everything it references. Only the paths
+changed.
 
 Textures load on first frame regardless, so nothing changes visually.
 
 ### Lazy patch registry
 
-Today `Radar::Init` applies the GPS-engine, nitro and wanted patches
-unconditionally. New rule: a module's game-code hook is only installed while the
-module is enabled.
+`src/core/RadarPatches.inc` now owns a registry of every hook site.
 
-- `PatchRegistry` records the original bytes at each patch address before the
-  first write.
-- Enabling a module writes its patch set; disabling restores the recorded bytes
-  and flushes the instruction cache.
-- Live restore is used where it is safe: the wanted-star jump, nitro hook,
-  radar suppression patches.
-- Restart-only: the GPS pathfinder buffer resize, because reallocating the node
-  array mid-route corrupts an in-flight search. The menu tags those
-  `(restart)`.
+- `SnapshotPatch(address, size, module)` copies the original bytes before the
+  first write, keyed by module.
+- `RestoreModulePatches(module)` writes those bytes back and flushes the
+  instruction cache.
+- `SyncModulePatches()` compares each module's config flag against its live
+  state and applies or restores accordingly. It runs from `Radar::Init` and once
+  per frame from `OnGameProcess`, where every branch early-outs, so a menu
+  toggle takes effect immediately.
+
+| module | live restore |
+|---|---|
+| nitro (`0x6A3EA0`) | yes |
+| wanted stars (`0x58D9A0`) | yes |
+| GPS pathfinder buffers | no, restart-only |
+
+The GPS buffer swap is restart-only because the engine keeps a pointer to a fixed
+node array; swapping it while a search is in flight corrupts the walk. It is
+applied once at boot when `[UI] USE_GPS_NAV` is on, and
+`RestoreModulePatches` refuses to touch it, logging that a restart is needed.
 
 ---
 

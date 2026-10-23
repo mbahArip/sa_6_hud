@@ -233,7 +233,6 @@ static void DrawInvestigationGauge() {
     DrawHeatBadges(true);
 }
 
-static bool  s_wantedPatchesApplied = false;
 static float s_starSlide[6]         = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
 static float s_starGlowProgress[6]  = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
 static bool  s_wantedGaugeEverShown = false;
@@ -467,8 +466,9 @@ static void Hooked_DrawWanted() {
 }
 
 static void ApplyWantedPatches() {
-    if (s_wantedPatchesApplied) return;
-    s_wantedPatchesApplied = true;
+    if (s_moduleActive[PATCHMOD_WANTED_STARS]) return;
+    s_moduleActive[PATCHMOD_WANTED_STARS] = true;
+    SnapshotPatch((void*)0x58D9A0, 5, PATCHMOD_WANTED_STARS);
     plugin::patch::RedirectJump(0x58D9A0, Hooked_DrawWanted);
     LogWrite("wanted: wanted star renderer hook installed at 0x58D9A0");
 }
