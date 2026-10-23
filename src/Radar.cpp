@@ -69,7 +69,6 @@ namespace hud6 {
 #include "RadarPatches.inc"
 #include "RadarState.inc"
 #include "RadarHeatCore.inc"
-#include "RadarCopAi.inc"
 #include "RadarWanted.inc"
 #include "RadarInfoCards.inc"
 #include "RadarRenderPrimitives.inc"

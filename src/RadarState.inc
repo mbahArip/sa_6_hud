@@ -46,9 +46,6 @@ static bool               g_copHasVisual      = false;
 static float              g_escapeTimer       = 0.0f;
 static float              g_heatEscapeTimer   = 0.0f;
 static float               g_visualLossTimer = 0.0f;
-static float               g_dispatchTimer = 0.0f;
-static unsigned int        g_lastCopCompositionWanted = 0;
-static std::vector<int>       g_pluginPoliceUnitRefs;
 
 static inline CVector LerpVec(const CVector& a, const CVector& b, float t);
 static float              g_innerSearchAlpha  = 1.0f;

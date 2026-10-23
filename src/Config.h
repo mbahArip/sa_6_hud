@@ -330,26 +330,6 @@ struct Config {
     bool   vehicleHeatRequireCurrentVisual = true;             // Vehicle heat requires current police visual confirmation
 
     // =========================================================================
-    // [cop_ai] Safe police behavior director
-    // =========================================================================
-    bool   copAiEnabled = true;
-    float  copAiVisualLossGracePeriod = 2.0f;
-    float  copAiHiddenSearchGracePeriod = 2.0f;
-    float  copAiEscapeDifficultyScale = 1.25f;
-    bool   copAiMultiLevelAwarenessEnabled = true;
-    float  copAiMaxDirectVerticalDifference = 8.0f;
-    bool   copAiHeatAreaSpawnEnabled = true;
-    float  copAiHeatAreaSpawnRadiusScale = 1.0f;
-    float  copAiHeatAreaSpawnMinDistance = 100.0f;
-    float  copAiHeatAreaSpawnMaxDistance = 300.0f;
-    float  copAiHeatAreaFrontExclusionDistance = 100.0f;
-    float  copAiHeatAreaBehindSpawnChance = 0.75f;
-    bool   copAiHeatAreaSpawnAroundCorner = true;
-    float  copAiHeatAreaCornerPathExtraDistance = 25.0f;
-    int    copAiMaxSupplementalUnits = 1;
-    float  copAiSupplementalDispatchCooldown = 12.0f;
-
-    // =========================================================================
     // [weapon] & [money] Top-Right HUD Options
     // =========================================================================
     bool   useWeaponUi              = true;                  // [weapon] USE_WEAPON_UI (1 = on, 0 = off)

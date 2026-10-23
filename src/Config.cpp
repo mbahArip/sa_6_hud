@@ -712,26 +712,6 @@ void LoadConfig() {
     g_config.debugMode               = readInt("debug", "debug_mode", 0);
     g_config.vehicleHeatAllowHistoryFallback = readInt("heat_identification", "vehicle_heat_allow_history_fallback", 0) != 0;
     g_config.vehicleHeatRequireCurrentVisual = readInt("heat_identification", "vehicle_heat_require_current_visual", 1) != 0;
-    g_config.copAiEnabled = readInt("cop_ai", "enabled", 1) != 0;
-    g_config.copAiVisualLossGracePeriod = readFloat("cop_ai", "visual_loss_grace_period", 2.0f);
-    g_config.copAiHiddenSearchGracePeriod = readFloat("cop_ai", "hidden_search_grace_period", 2.0f);
-    g_config.copAiEscapeDifficultyScale = readFloat("cop_ai", "escape_difficulty_scale", 1.25f);
-    g_config.copAiMultiLevelAwarenessEnabled = readInt("cop_ai", "multi_level_awareness_enabled", 1) != 0;
-    g_config.copAiMaxDirectVerticalDifference = readFloat("cop_ai", "max_direct_vertical_difference", 8.0f);
-    g_config.copAiHeatAreaSpawnEnabled = readInt("cop_ai", "heat_area_spawn_enabled", 1) != 0;
-    g_config.copAiHeatAreaSpawnRadiusScale = readFloat("cop_ai", "heat_area_spawn_radius_scale", 1.0f);
-    g_config.copAiHeatAreaSpawnMinDistance = readFloat("cop_ai", "heat_area_spawn_min_distance", 100.0f);
-    g_config.copAiHeatAreaSpawnMaxDistance = readFloat("cop_ai", "heat_area_spawn_max_distance", 300.0f);
-    g_config.copAiHeatAreaFrontExclusionDistance = readFloat("cop_ai", "heat_area_front_exclusion_distance", 100.0f);
-    if (g_config.copAiHeatAreaFrontExclusionDistance < 0.0f) g_config.copAiHeatAreaFrontExclusionDistance = 0.0f;
-    g_config.copAiHeatAreaBehindSpawnChance = readFloat("cop_ai", "heat_area_behind_spawn_chance", 0.75f);
-    if (g_config.copAiHeatAreaBehindSpawnChance < 0.0f) g_config.copAiHeatAreaBehindSpawnChance = 0.0f;
-    if (g_config.copAiHeatAreaBehindSpawnChance > 1.0f) g_config.copAiHeatAreaBehindSpawnChance = 1.0f;
-    g_config.copAiHeatAreaSpawnAroundCorner = readInt("cop_ai", "heat_area_spawn_around_corner", 1) != 0;
-    g_config.copAiHeatAreaCornerPathExtraDistance = readFloat("cop_ai", "heat_area_corner_path_extra_distance", 25.0f);
-    if (g_config.copAiHeatAreaCornerPathExtraDistance < 0.0f) g_config.copAiHeatAreaCornerPathExtraDistance = 0.0f;
-    g_config.copAiMaxSupplementalUnits = readInt("cop_ai", "max_supplemental_units", 1);
-    g_config.copAiSupplementalDispatchCooldown = readFloat("cop_ai", "supplemental_dispatch_cooldown", 12.0f);
 
     // =========================================================================
     // [weapon.ammo] & [money]
@@ -995,7 +975,6 @@ void SaveConfig() {
 
     // Strip noise sections if previously present in INI
     WritePrivateProfileStringA("debug", NULL, NULL, path);
-    WritePrivateProfileStringA("cop_ai", NULL, NULL, path);
     WritePrivateProfileStringA("menu", NULL, NULL, path);
 
     // Update timestamp to avoid immediate hot-reload loop
