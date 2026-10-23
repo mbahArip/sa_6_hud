@@ -262,11 +262,11 @@ void Radar::DrawInfoCards(const CRect& rect, float alpha) {
 
             // Gauge background: 9px radius, minimap.card.background (with 2px padding)
             CRGBA gaugeBg = ModColor(g_config.cardBackdropColor, gAlpha);
-            DrawCircle(gx, gy, gaugeRad + 1.0f, gaugeBg, 20);
+            DrawCircle(gx, gy, gaugeRad + 1.0f, gaugeBg, 48);
 
             // Background track ring
             CRGBA trackCol(60, 68, 80, (unsigned char)(140 * gAlpha));
-            DrawArcStrip(gx, gy, gaugeRad - gaugeTrackW, gaugeRad, 0.0f, 2.0f * kPi, trackCol, 20);
+            DrawArcStrip(gx, gy, gaugeRad - gaugeTrackW, gaugeRad, 0.0f, 2.0f * kPi, trackCol, 48);
 
             // Active progress arc with circular end-caps
             float val = s_gaugeSlots[i].curValue;
@@ -274,17 +274,17 @@ void Radar::DrawInfoCards(const CRect& rect, float alpha) {
                 float startAngle = -kPi * 0.5f;
                 float endAngle = startAngle + (2.0f * kPi * Clampf(val, 0.0f, 1.0f));
                 CRGBA arcCol = ModColor(s_gaugeSlots[i].color, gAlpha);
-                DrawArcStrip(gx, gy, gaugeRad - gaugeTrackW, gaugeRad, startAngle, endAngle, arcCol, 24);
+                DrawArcStrip(gx, gy, gaugeRad - gaugeTrackW, gaugeRad, startAngle, endAngle, arcCol, 48);
 
                 // Circular start cap at 12 o'clock
                 float startCapX = gx + midRad * cosf(startAngle);
                 float startCapY = gy + midRad * sinf(startAngle);
-                DrawCircle(startCapX, startCapY, capRad, arcCol, 12);
+                DrawCircle(startCapX, startCapY, capRad, arcCol, 32);
 
                 // Circular end cap at current progress end
                 float endCapX = gx + midRad * cosf(endAngle);
                 float endCapY = gy + midRad * sinf(endAngle);
-                DrawCircle(endCapX, endCapY, capRad, arcCol, 12);
+                DrawCircle(endCapX, endCapY, capRad, arcCol, 32);
             }
 
             // 14px centered icon (texture or vector fallback)

@@ -13,6 +13,29 @@ static float s_renderMoney      = -1.0f;
 static int   s_lastMoney        = 0;
 static bool  s_moneyInitialized = false;
 
+// Money readout rolls from s_moneyAnimFrom to s_moneyAnimTo over kMoneyAnimDuration.
+// A plain speed clamp could not bound the animation: a large balance gap took tens
+// of seconds, so the counter was still rolling long after the cash changed.
+static const float kMoneyAnimDuration = 3.0f;
+static float s_moneyAnimFrom = 0.0f;
+static float s_moneyAnimTo   = 0.0f;
+static float s_moneyAnimT    = 1.0f;
+
+// Called on new game and on save load. Restarting the counter at 0 makes the readout
+// roll up to the session's starting balance instead of continuing from whatever the
+// previous session left behind (load a rich save, then start a new game, and the
+// counter used to count *down* from the old max).
+static void ResetMoneyAnimation() {
+    s_moneyInitialized = false;
+    s_moneyAnimFrom = 0.0f;
+    s_moneyAnimTo   = 0.0f;
+    s_moneyAnimT    = 1.0f;
+    s_renderMoney   = 0.0f;
+    s_lastMoney     = 0;
+    s_moneyIdleTimer = 4.0f;
+    s_moneyFadeAlpha = 1.0f;
+}
+
 static float s_wepSlotProgress  = 0.0f;
 
 static void DrawTopRightHUD(float masterAlpha) {
@@ -267,13 +290,19 @@ static void DrawTopRightHUD(float masterAlpha) {
         int curMoney = CWorld::Players[0].m_nMoney;
         if (!s_moneyInitialized) {
             s_lastMoney = curMoney;
-            s_renderMoney = (float)curMoney;
+            s_moneyAnimFrom = 0.0f;
+            s_moneyAnimTo = (float)curMoney;
+            s_moneyAnimT = (curMoney == 0) ? 1.0f : 0.0f;
+            s_renderMoney = 0.0f;
             s_moneyInitialized = true;
         }
 
         bool moneyChanged = (curMoney != s_lastMoney);
         if (moneyChanged) {
             s_moneyIdleTimer = g_config.uiIdleTimeout;
+            s_moneyAnimFrom = s_renderMoney;
+            s_moneyAnimTo = (float)curMoney;
+            s_moneyAnimT = 0.0f;
             s_lastMoney = curMoney;
         } else if (s_moneyIdleTimer > 0.0f) {
             s_moneyIdleTimer -= dt;
@@ -289,18 +318,14 @@ static void DrawTopRightHUD(float masterAlpha) {
             s_moneyFadeAlpha = std::max(0.0f, s_moneyFadeAlpha - dt / 0.25f);
         }
 
-        // Rolling money lerp animation
-        float diff = (float)curMoney - s_renderMoney;
-        if (std::abs(diff) > 0.1f) {
-            float speed = std::clamp(std::abs(diff) * 8.0f, 60.0f, 5000000.0f);
-            float step = speed * dt;
-            if (step >= std::abs(diff)) {
-                s_renderMoney = (float)curMoney;
-            } else {
-                s_renderMoney += (diff > 0.0f ? step : -step);
-            }
-        } else {
-            s_renderMoney = (float)curMoney;
+        // Ease-out roll, hard-capped at kMoneyAnimDuration so a huge balance gap
+        // cannot leave the counter spinning for tens of seconds.
+        if (s_moneyAnimT < 1.0f) {
+            s_moneyAnimT = std::min(1.0f, s_moneyAnimT + dt / kMoneyAnimDuration);
+            float inv = 1.0f - s_moneyAnimT;
+            float ease = 1.0f - inv * inv * inv;
+            s_renderMoney = s_moneyAnimFrom + (s_moneyAnimTo - s_moneyAnimFrom) * ease;
+            if (s_moneyAnimT >= 1.0f) s_renderMoney = s_moneyAnimTo;
         }
 
         float currentMoneyAlpha = isPreview ? 1.0f : (s_moneyFadeAlpha * masterAlpha);
@@ -333,11 +358,11 @@ static void DrawTopRightHUD(float masterAlpha) {
 
             // Background circle
             CRGBA gaugeBg = ModColor(g_config.cardBackdropColor, currentMoneyAlpha);
-            DrawCircle(gx, gy, gaugeRad + 1.0f, gaugeBg, 24);
+            DrawCircle(gx, gy, gaugeRad + 1.0f, gaugeBg, 48);
 
             // Track ring
             CRGBA trackCol(40, 40, 45, (unsigned char)(180.0f * currentMoneyAlpha));
-            DrawArcStrip(gx, gy, gaugeRad - gaugeTrackW, gaugeRad, 0.0f, 2.0f * kPi, trackCol, 24);
+            DrawArcStrip(gx, gy, gaugeRad - gaugeTrackW, gaugeRad, 0.0f, 2.0f * kPi, trackCol, 48);
 
             // Value arc
             float ratio = s_renderMoney / 999999999.0f;
@@ -348,7 +373,7 @@ static void DrawTopRightHUD(float masterAlpha) {
                 float startAngle = -kPi * 0.5f;
                 float endAngle = startAngle + ratio * 2.0f * kPi;
                 CRGBA gaugeValCol = ModColor(g_config.moneyGaugeColor, currentMoneyAlpha);
-                DrawArcStrip(gx, gy, gaugeRad - gaugeTrackW, gaugeRad, startAngle, endAngle, gaugeValCol, 24);
+                DrawArcStrip(gx, gy, gaugeRad - gaugeTrackW, gaugeRad, startAngle, endAngle, gaugeValCol, 48);
             }
 
             // Wallet icon in gauge center

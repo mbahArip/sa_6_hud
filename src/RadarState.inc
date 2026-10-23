@@ -7,6 +7,10 @@ static CVector g_playerPos;
 static CVector g_playerFwd;
 static CVector g_camRight, g_camUp;
 
+// Defined in RadarRenderTopRight.inc; declared here so Radar::Restart can reset the
+// money readout without the include order getting in the way.
+static void ResetMoneyAnimation();
+
 static float g_curTiltRad     = 35.0f * kPi / 180.0f;
 static float g_curDist        = 250.0f;
 static float g_curVCenter     = 0.55f;
@@ -294,7 +298,10 @@ static void DrawD3DTexturedQuad(IDirect3DTexture9* pTex, float x, float y, float
     dev->SetTexture(0, pTex);
     dev->SetSamplerState(0, D3DSAMP_MINFILTER, D3DTEXF_LINEAR);
     dev->SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
-    dev->SetSamplerState(0, D3DSAMP_MIPFILTER, D3DTEXF_LINEAR);
+    // Icons are 256x256 drawn at ~20-60px, so mip selection picks a heavily
+    // downsampled level and the glyph reads soft. Force the top mip; these are
+    // small HUD glyphs, so the aliasing is far less noticeable than the blur.
+    dev->SetSamplerState(0, D3DSAMP_MIPFILTER, D3DTEXF_NONE);
     dev->SetSamplerState(0, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
     dev->SetSamplerState(0, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
 
