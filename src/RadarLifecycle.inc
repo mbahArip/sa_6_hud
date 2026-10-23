@@ -210,6 +210,7 @@ void Radar::Shutdown() {
 
 void Radar::Restart() {
     Shutdown();
+    ResetMoneyAnimation();
     UpdateRadarRect();
     for (int i = 0; i < GAUGE_COUNT; ++i) {
         s_gaugeSlots[i] = GaugeAnimSlot();

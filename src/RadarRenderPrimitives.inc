@@ -427,12 +427,12 @@ static void DrawD3DTexturedRoundedFill(IDirect3DDevice9* dev, IDirect3DTexture9*
     dev->SetTexture(0, NULL);
 }
 
-static void DrawCircle(float cx, float cy, float radius, CRGBA col, int segments = 24) {
+static void DrawCircle(float cx, float cy, float radius, CRGBA col, int segments = 48) {
     if (radius <= 0.0f || col.a == 0) return;
     if (segments < 8) segments = 8;
-    if (segments > 48) segments = 48;
+    if (segments > 96) segments = 96;
 
-    static RwIm2DVertex verts[64];
+    static RwIm2DVertex verts[128];
     Set2DVert(verts[0], cx, cy, col);
     for (int i = 0; i <= segments; ++i) {
         float a = (float)i * (2.0f * kPi / (float)segments);
@@ -446,13 +446,13 @@ static void DrawCircle(float cx, float cy, float radius, CRGBA col, int segments
     RwIm2DRenderPrimitive(rwPRIMTYPETRIFAN, verts, segments + 2);
 }
 
-static void DrawRing(float cx, float cy, float innerR, float outerR, CRGBA col, int segments = 32) {
+static void DrawRing(float cx, float cy, float innerR, float outerR, CRGBA col, int segments = 64) {
     if (innerR <= 0.0f && outerR <= 0.0f) return;
     if (col.a == 0) return;
     if (segments < 8) segments = 8;
-    if (segments > 64) segments = 64;
+    if (segments > 96) segments = 96;
 
-    static RwIm2DVertex verts[132];
+    static RwIm2DVertex verts[196];
     int vCount = 0;
     for (int i = 0; i <= segments; ++i) {
         float a = (float)i * (2.0f * kPi / (float)segments);
