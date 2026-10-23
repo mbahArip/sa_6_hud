@@ -87,7 +87,20 @@ static void GuardedRun(StepFn step, const char* tag) {
 static void* g_pSearchRadiusPS = nullptr;
 static void* g_pPoliceAuraPS   = nullptr;
 
+static void ForgetShaders();
+
 void Radar::CreateShaders() {
+    IDirect3DDevice9* currentDevice = (IDirect3DDevice9*)RwD3D9GetCurrentD3DDevice();
+    if (currentDevice && currentDevice != g_textureDevice) {
+        // Device changed under us (save load recreates it without firing the
+        // lost/reset events). Every cached texture belongs to the old device, so
+        // drop them all before rebuilding. Pointers are non-null but dead.
+        if (g_textureDevice) {
+            ForgetShaders();
+        }
+        g_textureDevice = currentDevice;
+    }
+
     if (!g_pSearchRadiusPS) {
         RwBool ok = RwD3D9CreatePixelShader((const RwUInt32*)g_psSearchRadius, &g_pSearchRadiusPS);
         LogWrite("shader: SearchRadiusPS created %s (%p)", ok ? "OK" : "FAILED", g_pSearchRadiusPS);
@@ -133,6 +146,47 @@ void Radar::CreateShaders() {
     if (!g_pTexFuel)        g_pTexFuel        = LoadTexture("icons\\fuel.dds");
     if (!g_pTexNitro)       g_pTexNitro       = LoadTexture("icons\\nitro.dds");
     if (!g_pTexWallet)      g_pTexWallet      = LoadTexture("icons\\wallet.dds");
+}
+
+// Drops every cached pointer WITHOUT releasing. Used when the D3D device was
+// recreated behind our back: the old resources died with the old device, so
+// calling Release() on them would touch freed memory.
+static void ForgetShaders() {
+    g_pSearchRadiusPS = nullptr;
+    g_pPoliceAuraPS   = nullptr;
+    g_pBackdropBlurPS = nullptr;
+
+    g_pTexStarBase = nullptr;
+    g_pTexStarBorder = nullptr;
+    g_pTexIfruit = nullptr;
+    g_pTexMission = nullptr;
+    g_pTexZAbove = nullptr;
+    g_pTexZBelow = nullptr;
+    g_pTexPlayer = nullptr;
+    g_pTexPlayerWanted = nullptr;
+    g_pTexNorth = nullptr;
+    g_pTexEngine = nullptr;
+    g_pTexFuel = nullptr;
+    g_pTexNitro = nullptr;
+    g_pTexWallet = nullptr;
+    g_pTexPersonnelArc = nullptr;
+    g_pTexProfileIdentity = nullptr;
+    g_pTexProfileVehicle = nullptr;
+    g_pTexProfileOutfit = nullptr;
+    g_pTexProfileWeapon = nullptr;
+    g_pTexSoftGlow = nullptr;
+
+    for (int i = 0; i < 60; ++i) {
+        s_customWepIcons[i] = nullptr;
+        s_customWepIconChecked[i] = false;
+    }
+
+    for (int i = 0; i < 144; ++i) {
+        s_mapTiles[i].pDayTex = nullptr;
+        s_mapTiles[i].pNightTex = nullptr;
+        s_mapTiles[i].searchedDay = false;
+        s_mapTiles[i].searchedNight = false;
+    }
 }
 
 void Radar::DestroyShaders() {
@@ -211,6 +265,13 @@ void Radar::Shutdown() {
 void Radar::Restart() {
     Shutdown();
     ResetMoneyAnimation();
+    // Shutdown() just released every texture and shader. The device is live again
+    // by the time restartGameEvent fires, so rebuild here instead of waiting for a
+    // d3dReset event that a save load never sends.
+    CreateShaders();
+    g_warmupFrames = 0;
+    g_radarAlphaFade = 0.0f;
+    g_radarBlinkTimer = 1.0f;
     UpdateRadarRect();
     for (int i = 0; i < GAUGE_COUNT; ++i) {
         s_gaugeSlots[i] = GaugeAnimSlot();

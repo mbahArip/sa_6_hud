@@ -18,6 +18,10 @@ static float g_curPuckTilt    = 0.0f;
 static float g_radarAlphaFade = 0.0f;
 static float s_radarFadeProgress = 0.0f;
 
+// Vanilla blinks the radar a few times when it first appears after a game start.
+// We suppress CRadar::DrawRadarMap, so that blink has to be reproduced here.
+static float g_radarBlinkTimer = 0.0f;
+
 static bool    g_pinActive   = false;
 static CVector g_pinPos(0.0f, 0.0f, 0.0f);
 static float   g_gpsDistance = 0.0f;
@@ -33,6 +37,12 @@ static bool    g_hudShowAll      = false;
 static bool g_radarDead    = false;
 static bool g_playerOk     = false;
 static int  g_warmupFrames = 0;
+
+// The D3D device the icon/shaders/tile cache were created against. A save load
+// recreates the device without firing d3dLost/d3dReset, so every cached pointer
+// goes stale while still looking non-null. Comparing this each frame is the only
+// reliable way to notice and rebuild.
+static IDirect3DDevice9* g_textureDevice = nullptr;
 
 // Wanted Search Area & Evasion State
 enum eWantedSearchStage {
