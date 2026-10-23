@@ -83,11 +83,13 @@ if not exist "D:\Games\gta sa\GTA San Andreas\6hud\colors.ini" copy /Y "$(Projec
   <ItemGroup>
     <ClCompile Include="src\Main.cpp" />
     <ClCompile Include="src\Config.cpp" />
+    <ClCompile Include="src\I18n.cpp" />
     <ClCompile Include="src\Radar.cpp" />
     <ClCompile Include="src\Menu.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\Config.h" />
+    <ClInclude Include="src\I18n.h" />
     <ClInclude Include="src\Radar.h" />
     <ClInclude Include="src\Menu.h" />
   </ItemGroup>

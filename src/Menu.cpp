@@ -1,5 +1,6 @@
 #include "Menu.h"
 #include "Config.h"
+#include "I18n.h"
 #include <plugin.h>
 #include <sa_ui/sa_ui.h>
 #include <vector>
@@ -131,7 +132,12 @@ void Menu::Render() {
     sa_ui::BeginCard(panel, "6HUD Settings", "Configure modules, perspective, lighting & threat radars");
 
     // Tabs container
-    std::vector<std::string> tabNames = { "Radar", "GPS", "Cards", "Search", "Heat", "Sirens", "Arcs/Snitch", "Layout" };
+    std::vector<std::string> tabNames = {
+        I18n(I18N_MENU_TAB_RADAR),  I18n(I18N_MENU_TAB_GPS),
+        I18n(I18N_MENU_TAB_CARDS),  I18n(I18N_MENU_TAB_SEARCH),
+        I18n(I18N_MENU_TAB_HEAT),   I18n(I18N_MENU_TAB_SIRENS),
+        I18n(I18N_MENU_TAB_ARCS),   I18n(I18N_MENU_TAB_LAYOUT)
+    };
     CRect tabRect(left + 20.0f, top + 55.0f, left + cardW - 20.0f, top + 88.0f);
     s_activeTab = sa_ui::Tabs(tabNames, s_activeTab, tabRect);
 

@@ -1,5 +1,6 @@
 #include <plugin.h>
 #include "Config.h"
+#include "I18n.h"
 #include "Radar.h"
 #include "Menu.h"
 
@@ -51,6 +52,7 @@ static void UpdateVanillaPatches() {
 static void OnInitGame() {
     hud6::LoadConfig();
     hud6::ApplyPendingConfig();
+    hud6::LoadI18n();
     UpdateVanillaPatches();
     hud6::Radar::Init();
     hud6::Menu::Init();
