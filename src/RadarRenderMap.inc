@@ -84,7 +84,7 @@ static void BlitMapTileTexture(
         { sx2 - 0.5f, sy2 - 0.5f, 0.0f, 1.0f, dwCol, uv1, uv0 },
     };
 
-    dev->SetFVF(D3DFVF_2DVERT);
+    BeginRawD3DQuad(dev);
     dev->SetTexture(0, pTex);
     dev->SetSamplerState(0, D3DSAMP_MINFILTER, D3DTEXF_LINEAR);
     dev->SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
@@ -101,13 +101,8 @@ static void BlitMapTileTexture(
     dev->SetTextureStageState(0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE);
     dev->SetTextureStageState(0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
 
-    dev->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
     dev->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
     dev->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
-    dev->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
-    dev->SetRenderState(D3DRS_ZENABLE, FALSE);
-    dev->SetRenderState(D3DRS_LIGHTING, FALSE);
-    dev->SetPixelShader(NULL);
 
     dev->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, quad, sizeof(D3D2DVert));
     dev->SetTexture(0, NULL);
