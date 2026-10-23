@@ -193,14 +193,24 @@ VEHICLE_FALLBACK=Vehicle
 MENU_TAB_RADAR=Radar
 ```
 
-Ship `en.ini` plus `fr/de/it/es.ini`. Non-English files start as copies of the
-English set for the community to fill in.
+Shipped: `en.ini`, `fr.ini`, `de.ini`, `it.ini`, `es.ini`.
+
+### Implementation
+
+`src/I18n.h` / `src/I18n.cpp` hold a fixed `eI18nKey` table. Each key has an
+English default compiled in, so a missing file or a partial translation degrades
+to English instead of printing blanks. Strings are copied into a static array at
+load time, so lookups are pointer returns and cost nothing per frame.
 
 ### Language source
 
 `FrontEndMenuManager.m_nPrefsLanguage` (0 EN, 1 FR, 2 DE, 3 IT, 4 ES), read once
-at `Init`. The game fixes its language before boot, so no hot-swap is needed.
-Missing file falls back to `en.ini`.
+in `LoadI18n()`. The game fixes its language before boot, so no hot-swap is
+needed; a second call is a no-op unless the index changed.
+
+Translated so far: the GPS turn and distance strings, the vehicle-name fallback,
+and the settings menu tab names. Remaining menu labels are still English and
+belong to the per-module fine-tuning pass.
 
 ---
 

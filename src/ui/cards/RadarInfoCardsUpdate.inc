@@ -117,30 +117,31 @@ void Radar::UpdateInfoCards() {
                 s_gpsNavState.turnDistance = turnDist;
 
                 switch (detectedManeuver) {
-                    case GpsManeuver::UTurnLeft:   snprintf(s_gpsNavState.maneuverText, sizeof(s_gpsNavState.maneuverText), "Make U-Turn Left"); break;
-                    case GpsManeuver::UTurnRight:  snprintf(s_gpsNavState.maneuverText, sizeof(s_gpsNavState.maneuverText), "Make U-Turn Right"); break;
-                    case GpsManeuver::TurnRight:   snprintf(s_gpsNavState.maneuverText, sizeof(s_gpsNavState.maneuverText), "Turn Right"); break;
-                    case GpsManeuver::TurnLeft:    snprintf(s_gpsNavState.maneuverText, sizeof(s_gpsNavState.maneuverText), "Turn Left"); break;
-                    case GpsManeuver::SlightRight: snprintf(s_gpsNavState.maneuverText, sizeof(s_gpsNavState.maneuverText), "Bear Right"); break;
-                    case GpsManeuver::SlightLeft:  snprintf(s_gpsNavState.maneuverText, sizeof(s_gpsNavState.maneuverText), "Bear Left"); break;
-                    default:                       snprintf(s_gpsNavState.maneuverText, sizeof(s_gpsNavState.maneuverText), "Continue"); break;
+                    case GpsManeuver::UTurnLeft:   snprintf(s_gpsNavState.maneuverText, sizeof(s_gpsNavState.maneuverText), "%s", I18n(I18N_GPS_UTURN_LEFT)); break;
+                    case GpsManeuver::UTurnRight:  snprintf(s_gpsNavState.maneuverText, sizeof(s_gpsNavState.maneuverText), "%s", I18n(I18N_GPS_UTURN_RIGHT)); break;
+                    case GpsManeuver::TurnRight:   snprintf(s_gpsNavState.maneuverText, sizeof(s_gpsNavState.maneuverText), "%s", I18n(I18N_GPS_TURN_RIGHT)); break;
+                    case GpsManeuver::TurnLeft:    snprintf(s_gpsNavState.maneuverText, sizeof(s_gpsNavState.maneuverText), "%s", I18n(I18N_GPS_TURN_LEFT)); break;
+                    case GpsManeuver::SlightRight: snprintf(s_gpsNavState.maneuverText, sizeof(s_gpsNavState.maneuverText), "%s", I18n(I18N_GPS_BEAR_RIGHT)); break;
+                    case GpsManeuver::SlightLeft:  snprintf(s_gpsNavState.maneuverText, sizeof(s_gpsNavState.maneuverText), "%s", I18n(I18N_GPS_BEAR_LEFT)); break;
+                    default:                       snprintf(s_gpsNavState.maneuverText, sizeof(s_gpsNavState.maneuverText), "%s", I18n(I18N_GPS_CONTINUE)); break;
                 }
 
                 if (turnDist <= 12.0f) {
-                    snprintf(s_gpsNavState.distanceText, sizeof(s_gpsNavState.distanceText), (g_config.distanceUnit == 0) ? "0m" : "0ft");
+                    snprintf(s_gpsNavState.distanceText, sizeof(s_gpsNavState.distanceText), "%s",
+                             I18n(g_config.distanceUnit == 0 ? I18N_GPS_NOW_M : I18N_GPS_NOW_FT));
                 } else if (g_config.distanceUnit == 0) {
                     if (turnDist >= 1000.0f) {
-                        snprintf(s_gpsNavState.distanceText, sizeof(s_gpsNavState.distanceText), "In %.1fkm", turnDist / 1000.0f);
+                        snprintf(s_gpsNavState.distanceText, sizeof(s_gpsNavState.distanceText), I18n(I18N_GPS_IN_KM), turnDist / 1000.0f);
                     } else {
-                        snprintf(s_gpsNavState.distanceText, sizeof(s_gpsNavState.distanceText), "In %.0fm", turnDist);
+                        snprintf(s_gpsNavState.distanceText, sizeof(s_gpsNavState.distanceText), I18n(I18N_GPS_IN_M), turnDist);
                     }
                 } else {
                     float miles = (turnDist * 3.28084f) / 5280.0f;
                     if (miles >= 0.10f) {
-                        snprintf(s_gpsNavState.distanceText, sizeof(s_gpsNavState.distanceText), "In %.2fmi", miles);
+                        snprintf(s_gpsNavState.distanceText, sizeof(s_gpsNavState.distanceText), I18n(I18N_GPS_IN_MI), miles);
                     } else {
                         float feet = turnDist * 3.28084f;
-                        snprintf(s_gpsNavState.distanceText, sizeof(s_gpsNavState.distanceText), "In %.0fft", feet);
+                        snprintf(s_gpsNavState.distanceText, sizeof(s_gpsNavState.distanceText), I18n(I18N_GPS_IN_FT), feet);
                     }
                 }
             } else {
@@ -230,7 +231,7 @@ void Radar::UpdateInfoCards() {
                 strncpy_s(s_vehName, sizeof(s_vehName), gxtKey, _TRUNCATE);
             }
         } else {
-            strncpy_s(s_vehName, sizeof(s_vehName), "Vehicle", _TRUNCATE);
+            strncpy_s(s_vehName, sizeof(s_vehName), I18n(I18N_VEHICLE_FALLBACK), _TRUNCATE);
         }
 
         const char* clsName = GetVehicleClassString(veh, minfo);

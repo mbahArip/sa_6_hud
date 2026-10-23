@@ -1,5 +1,6 @@
 #include "Radar.h"
 #include "Config.h"
+#include "I18n.h"
 #include "Menu.h"
 
 #include <plugin.h>
