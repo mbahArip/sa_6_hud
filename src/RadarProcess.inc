@@ -104,6 +104,20 @@ void Radar::Process() {
         // Smoothstep ease-in-out curve
         g_radarAlphaFade = s_radarFadeProgress * s_radarFadeProgress * (3.0f - 2.0f * s_radarFadeProgress);
 
+        // Intro blink, mirroring vanilla's flash when the radar first appears.
+        if (g_radarBlinkTimer > 0.0f) {
+            g_radarBlinkTimer -= dt;
+            const float kBlinkTotal = 1.0f;
+            const float kBlinkPeriod = 0.25f;
+            if (g_radarBlinkTimer > 0.0f) {
+                float elapsed = kBlinkTotal - g_radarBlinkTimer;
+                bool on = fmodf(elapsed, kBlinkPeriod * 2.0f) < kBlinkPeriod;
+                if (!on) g_radarAlphaFade = 0.0f;
+            } else {
+                g_radarBlinkTimer = 0.0f;
+            }
+        }
+
         // Update destination cross-fade (0 = iFruit icon, 1 = Distance Remaining)
         CVector destPos;
         bool hasDest = HasActiveDestination(destPos);

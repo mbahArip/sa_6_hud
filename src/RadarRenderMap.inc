@@ -132,6 +132,10 @@ static void BlitMapTileBlended(
 }
 
 void Radar::DrawMap2D(const CRect& rect, float alpha) {
+    // Vanilla CRadar::DrawRadarMap draws a blank dark disc inside interiors
+    // instead of map tiles. CGame::currArea is non-zero whenever we are in one.
+    if (CGame::currArea > 0) return;
+
     float rw = rect.right - rect.left;
     float rh = rect.bottom - rect.top;
 

@@ -13,6 +13,11 @@ void Radar::Render() {
     CPlayerPed* player = FindPlayerPed(0);
     if (!player || !Scene.m_pWorld) return;
 
+    // Cheap while warm: every loader early-outs on a non-null pointer, and the
+    // device comparison catches the save-load case where the device was swapped
+    // without a lost/reset event and the cached textures went stale.
+    CreateShaders();
+
     UpdateRadarRect();
 
     GuardedRun(DrawOverlay, "render.overlay");

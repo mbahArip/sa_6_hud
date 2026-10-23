@@ -79,9 +79,12 @@ void Radar::DrawOverlay() {
 
     if (needRadar) {
         DrawBorder(g_radarRect, alpha);
-        DrawBlips(g_radarRect, alpha);
-        DrawPoliceBlips(g_radarRect, alpha);
-        DrawNorthBadge(g_radarRect, alpha);
+        // Vanilla shows an empty dark disc inside interiors: no blips, no compass.
+        if (CGame::currArea == 0) {
+            DrawBlips(g_radarRect, alpha);
+            DrawPoliceBlips(g_radarRect, alpha);
+            DrawNorthBadge(g_radarRect, alpha);
+        }
         DrawPlayerPuck(g_radarRect, alpha);
         DrawPinMarker(g_radarRect, alpha);
         DrawGpsDistance(g_radarRect, alpha);
