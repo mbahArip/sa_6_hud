@@ -5,8 +5,6 @@ static void WipeAllHeatAndSearch() {
     g_escapeTimer = 0.0f;
     g_heatEscapeTimer = 0.0f;
     g_visualLossTimer = 0.0f;
-    g_lastCopCompositionWanted = 0;
-    ReleasePluginPoliceUnits();
     g_innerSearchAlpha = 1.0f;
 
     g_hasIdentityHeat = false;

@@ -1,3 +1,24 @@
+static bool IsPoliceVehicleModel(int model) {
+    return model == MODEL_COPCARLA || model == MODEL_COPCARSF ||
+        model == MODEL_COPCARVG || model == MODEL_COPCARRU ||
+        model == MODEL_COPBIKE || model == MODEL_FBIRANCH ||
+        model == MODEL_RANCHER || model == MODEL_SWATVAN ||
+        model == MODEL_ENFORCER || model == MODEL_POLMAV ||
+        model == MODEL_HUNTER || model == MODEL_RHINO ||
+        model == MODEL_BARRACKS || model == MODEL_PREDATOR;
+}
+
+static bool HasValidPoliceDriver(CVehicle* vehicle) {
+    if (!vehicle || !vehicle->m_pDriver || vehicle->m_pDriver->m_fHealth <= 0.0f) return false;
+    return vehicle->m_pDriver->m_nPedType == PED_TYPE_COP;
+}
+
+static bool IsPoliceHelicopter(CVehicle* vehicle) {
+    if (!vehicle) return false;
+    return vehicle->m_nModelIndex == MODEL_POLMAV || vehicle->m_nModelIndex == MODEL_HUNTER ||
+        vehicle->m_nVehicleClass == VEHICLE_HELI;
+}
+
 void Radar::UpdateWantedSearch() {
     CPlayerPed* player = FindPlayerPed(0);
     if (!player) return;
@@ -88,8 +109,6 @@ void Radar::UpdateWantedSearch() {
             CVector copPos = ped->GetPosition();
             float distSq = (copPos - pPos).MagnitudeSqr();
             if (distSq > (85.0f * 85.0f)) continue;
-            if (g_config.copAiMultiLevelAwarenessEnabled &&
-                fabsf(copPos.z - pPos.z) > g_config.copAiMaxDirectVerticalDifference) continue;
 
             float dist = sqrtf(distSq);
             CVector copEyePos = copPos + CVector(0.0f, 0.0f, 0.75f);
@@ -134,8 +153,6 @@ void Radar::UpdateWantedSearch() {
             float maxRange = isHeli ? 250.0f : 150.0f;
             float distSq = (vehPos - pPos).MagnitudeSqr();
             if (distSq > (maxRange * maxRange)) continue;
-            if (g_config.copAiMultiLevelAwarenessEnabled && !isHeli &&
-                fabsf(vehPos.z - pPos.z) > g_config.copAiMaxDirectVerticalDifference) continue;
 
             if (!isHeli && distSq > (12.0f * 12.0f)) {
                 CVector toPlayer = (pPos - vehPos).Normalized();
@@ -156,15 +173,9 @@ void Radar::UpdateWantedSearch() {
         g_visualLossTimer = 0.0f;
     } else {
         g_visualLossTimer += dt;
-        if (g_visualLossTimer < std::max(0.0f, g_config.copAiVisualLossGracePeriod) &&
-            g_wantedStage == WANTED_STAGE_PURSUIT) {
-            hasVisual = true;
-        }
     }
 
     g_copHasVisual = hasVisual;
-
-    UpdateCopAi(player, wanted, dt);
 
     if (g_config.enableHeatIdentification) {
         TrackClothesAndVehicleHeat(player, wanted, hasVisual, dt);
@@ -193,16 +204,13 @@ void Radar::UpdateWantedSearch() {
             g_innerSearchAlpha = Lerpf(g_innerSearchAlpha, 1.0f, dt * 6.0f);
             float distToLkp = (pPos - g_searchCenter).Magnitude2D();
             bool isOutsideSearch = distToLkp > g_searchRadius;
-            bool isHiding = g_config.allowHideInSearchArea &&
-                (player->bIsDucking || g_visualLossTimer >= std::max(0.0f, g_config.copAiHiddenSearchGracePeriod));
+            bool isHiding = g_config.allowHideInSearchArea && player->bIsDucking;
             bool isDucking = player->bIsDucking;
 
             if (isOutsideSearch || isHiding) {
                 float timerRate = isDucking ? 1.5f : 1.0f;
                 g_escapeTimer += dt * timerRate;
-                float adjustedEscapeTime = lkpTargetEscapeTime *
-                    std::max(0.25f, g_config.copAiEscapeDifficultyScale);
-                if (g_escapeTimer >= adjustedEscapeTime) {
+                if (g_escapeTimer >= lkpTargetEscapeTime) {
                     if (isHeatAreaActive && g_config.enableHeatSearchStage) {
                         g_wantedStage = WANTED_STAGE_HEAT;
                         g_heatEscapeTimer = 0.0f;
