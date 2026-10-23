@@ -74,9 +74,10 @@ void Radar::Process() {
 
         // Update Game Clock & HUD key state
         bool hudKeyHeld = false;
-        if (g_config.showHudKey > 0 && !FrontEndMenuManager.m_bMenuActive) {
-            hudKeyHeld = ((GetAsyncKeyState(g_config.showHudKey) & 0x8000) != 0)
-                      || (CPad::NewKeyState.standardKeys[g_config.showHudKey] != 0);
+        if (!FrontEndMenuManager.m_bMenuActive) {
+            hudKeyHeld = (g_config.showHudKey > 0 && ((GetAsyncKeyState(g_config.showHudKey) & 0x8000) != 0
+                          || CPad::NewKeyState.standardKeys[g_config.showHudKey] != 0))
+                      || IsPadButtonDown(g_config.showHudPad);
         }
         g_hudKeyHeld = hudKeyHeld;
         if (hudKeyHeld) {

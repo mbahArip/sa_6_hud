@@ -22,14 +22,12 @@ static bool s_peekActive = false;
 static bool s_lastInfoKeyDown = false;
 
 static void UpdateInput() {
-    if (g_config.peekKey > 0 && !FrontEndMenuManager.m_bMenuActive) {
-        s_peekActive = (GetAsyncKeyState(g_config.peekKey) & 0x8000) != 0;
-    } else {
-        s_peekActive = false;
-    }
+    if (!FrontEndMenuManager.m_bMenuActive) {
+        s_peekActive = (g_config.peekKey > 0 && (GetAsyncKeyState(g_config.peekKey) & 0x8000) != 0)
+                    || IsPadButtonDown(g_config.peekPad);
 
-    if (g_config.infoHotkey > 0 && !FrontEndMenuManager.m_bMenuActive) {
-        bool infoDown = (GetAsyncKeyState(g_config.infoHotkey) & 0x8000) != 0;
+        bool infoDown = (g_config.infoHotkey > 0 && (GetAsyncKeyState(g_config.infoHotkey) & 0x8000) != 0)
+                     || IsPadButtonDown(g_config.infoPad);
         if (infoDown && !s_lastInfoKeyDown) {
             s_locShowTimer = g_config.locationDuration;
             if (s_inVehicle) {
@@ -38,6 +36,7 @@ static void UpdateInput() {
         }
         s_lastInfoKeyDown = infoDown;
     } else {
+        s_peekActive = false;
         s_lastInfoKeyDown = false;
     }
 }
