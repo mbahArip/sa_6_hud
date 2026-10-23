@@ -197,7 +197,7 @@ void Radar::UpdateInfoCards() {
         if (s_locShowTimer < 0.0f) s_locShowTimer = 0.0f;
     }
 
-    float targetLocAlpha = (g_config.usePlaceInfo && s_locShowTimer > 0.0f) ? 1.0f : 0.0f;
+    float targetLocAlpha = (g_config.usePlaceInfo && (g_config.alwaysShowPlaceInfo || s_locShowTimer > 0.0f)) ? 1.0f : 0.0f;
     s_locAlpha = Lerpf(s_locAlpha, targetLocAlpha, trSpd);
 
     // -------------------------------------------------------------------------
@@ -251,7 +251,7 @@ void Radar::UpdateInfoCards() {
     }
 
     float targetVehCardAlpha = (g_config.useVehicleInfo && s_inVehicle) ? 1.0f : 0.0f;
-    float targetVehNameAlpha = (g_config.useVehicleInfo && s_inVehicle && s_vehNameTimer > 0.0f) ? 1.0f : 0.0f;
+    float targetVehNameAlpha = (g_config.useVehicleInfo && s_inVehicle && (g_config.alwaysShowVehInfo || s_vehNameTimer > 0.0f)) ? 1.0f : 0.0f;
 
     s_vehCardAlpha = Lerpf(s_vehCardAlpha, targetVehCardAlpha, trSpd);
     s_vehNameAlpha = Lerpf(s_vehNameAlpha, targetVehNameAlpha, trSpd);

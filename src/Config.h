@@ -353,6 +353,15 @@ struct Config {
     bool   vehicleHeatRequireCurrentVisual = true;             // Vehicle heat requires current police visual confirmation
 
     // =========================================================================
+    // [MONEY] / [WEAPON] / [PLACE_INFO] / [VEH_INFO] / [GPS_NAV] Auto-hide
+    // =========================================================================
+    // When set, the element ignores UI_IDLE_TIMEOUT and never fades out.
+    bool   alwaysShowMoney          = false;                 // [MONEY] ALWAYS_SHOW
+    bool   alwaysShowWeapon         = false;                 // [WEAPON] ALWAYS_SHOW
+    bool   alwaysShowPlaceInfo      = false;                 // [PLACE_INFO] ALWAYS_SHOW
+    bool   alwaysShowVehInfo        = false;                 // [VEH_INFO] ALWAYS_SHOW
+
+    // =========================================================================
     // [weapon] & [money] Top-Right HUD Options
     // =========================================================================
     bool   useWeaponUi              = true;                  // [weapon] USE_WEAPON_UI (1 = on, 0 = off)

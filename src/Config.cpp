@@ -52,6 +52,59 @@ static void GetIniPath(char* outPath, size_t outSize) {
     snprintf(outPath, outSize, "%s\\6hud.ini", dir);
 }
 
+// Pre-migration config, written by every release before the [UI]/[EXT] regroup.
+// Present only until the first successful migration, which deletes it.
+static void GetLegacyIniPath(char* outPath, size_t outSize) {
+    char dir[MAX_PATH] = {};
+    GetModuleFileNameA(nullptr, dir, MAX_PATH);
+    char* slash = strrchr(dir, '\\');
+    if (slash) *slash = '\0';
+    snprintf(outPath, outSize, "%s\\6hud.old.ini", dir);
+}
+
+// True when the file already carries the current layout. Used to decide whether
+// a migration is needed; checking [UI] is enough because it is the marker this
+// release introduced.
+static bool IniHasUiSection(const char* path) {
+    char buf[32] = {};
+    return GetPrivateProfileStringA("UI", "USE_RADAR", "", buf, sizeof(buf), path) > 0;
+}
+
+// Moves a pre-regroup config into place so the legacy read-chains below can pick
+// its values up, then lets SaveConfig() rewrite it in the new layout and removes
+// the old file. Without this the user's settings would silently reset.
+//
+// Two entry points, because an upgrade and a hand-renamed file look different:
+//   - 6hud.ini in the old layout and no 6hud.old.ini  -> rename it, then migrate
+//   - 6hud.old.ini present                            -> migrate from it
+static void MigrateLegacyIni(const char* iniPath) {
+    char legacyPath[MAX_PATH] = {};
+    GetLegacyIniPath(legacyPath, sizeof(legacyPath));
+
+    if (IniHasUiSection(iniPath)) {
+        // Already migrated. A stray old file means a previous run was interrupted.
+        DeleteFileA(legacyPath);
+        return;
+    }
+
+    if (GetFileAttributesA(legacyPath) == INVALID_FILE_ATTRIBUTES) {
+        // Upgrading in place: the current 6hud.ini is itself the legacy source.
+        if (GetFileAttributesA(iniPath) == INVALID_FILE_ATTRIBUTES) {
+            return; // Fresh install: defaults get written on the first save.
+        }
+        if (!MoveFileA(iniPath, legacyPath)) {
+            LogWrite("config: could not stage %s for migration", iniPath);
+            return;
+        }
+    }
+
+    if (!CopyFileA(legacyPath, iniPath, FALSE)) {
+        LogWrite("config: migration could not write %s", iniPath);
+        return;
+    }
+    LogWrite("config: migrated legacy settings into the new layout");
+}
+
 static void GetColorsIniPath(char* outPath, size_t outSize) {
     char dir[MAX_PATH] = {};
     GetModuleFileNameA(nullptr, dir, MAX_PATH);
@@ -264,6 +317,19 @@ void LoadConfig() {
     GetIniPath(path, sizeof(path));
     char colorsPath[MAX_PATH] = {};
     GetColorsIniPath(colorsPath, sizeof(colorsPath));
+
+    // Must run before the read lambdas capture `path`: a pre-regroup config is
+    // staged into 6hud.old.ini and copied back so the legacy chains below see it.
+    bool wasMigrated = false;
+    if (!IniHasUiSection(path) && GetFileAttributesA(path) != INVALID_FILE_ATTRIBUTES) {
+        MigrateLegacyIni(path);
+        wasMigrated = true;
+    } else if (IniHasUiSection(path)) {
+        // Clean up a leftover staging file from an interrupted migration.
+        char legacyPath[MAX_PATH] = {};
+        GetLegacyIniPath(legacyPath, sizeof(legacyPath));
+        DeleteFileA(legacyPath);
+    }
 
     auto readStr = [&](const char* section, const char* key, const char* def) -> std::string {
         char s[128] = {};
@@ -874,11 +940,54 @@ void LoadConfig() {
         g_config.modulePositions[i].offsetY = readFloat(sec.c_str(), "offset_y", def.offsetY);
     }
 
+    // =========================================================================
+    // [UI] Master toggles per HUD surface
+    // =========================================================================
+    // Applied last so they win over the per-module legacy reads above. The
+    // fallback is whatever those reads produced, so an INI from an older release
+    // keeps working untouched.
+    g_config.enabled        = readInt("UI", "USE_RADAR",        g_config.enabled ? 1 : 0) != 0;
+    g_config.enableGps      = readInt("UI", "USE_GPS_NAV",      g_config.enableGps ? 1 : 0) != 0;
+    g_config.usePlaceInfo   = readInt("UI", "USE_PLACE_INFO",   g_config.usePlaceInfo ? 1 : 0) != 0;
+    g_config.useVehicleInfo = readInt("UI", "USE_VEH_INFO",     g_config.useVehicleInfo ? 1 : 0) != 0;
+    g_config.useWantedStar  = readInt("UI", "USE_WANTED_LEVEL", g_config.useWantedStar ? 1 : 0) != 0;
+    g_config.useWeaponUi    = readInt("UI", "USE_WEAPON",       g_config.useWeaponUi ? 1 : 0) != 0;
+    g_config.useMoneyUi     = readInt("UI", "USE_MONEY",        g_config.useMoneyUi ? 1 : 0) != 0;
+
+    // =========================================================================
+    // [EXT] Extension module presence toggles
+    // =========================================================================
+    g_config.useVehicleFuel          = readInt("EXT", "USE_FUEL",            g_config.useVehicleFuel ? 1 : 0) != 0;
+    g_config.enableControllableNitro = readInt("EXT", "USE_NITRO_BOOST",     g_config.enableControllableNitro ? 1 : 0) != 0;
+    g_config.useWantedHeatArea       = readInt("EXT", "USE_HEAT_AREA",       g_config.useWantedHeatArea ? 1 : 0) != 0;
+    g_config.useWantedSearchArea     = readInt("EXT", "USE_SEARCH_AREA",     g_config.useWantedSearchArea ? 1 : 0) != 0;
+    g_config.useCriminalProfile      = readInt("EXT", "USE_CRIMINAL_PROFILE", g_config.useCriminalProfile ? 1 : 0) != 0;
+    g_config.useSnitchSystem         = readInt("EXT", "USE_SNITCH_SYSTEM",   g_config.useSnitchSystem ? 1 : 0) != 0;
+    g_config.usePoliceSirenIndicator = readInt("EXT", "USE_SIREN_INDICATOR", g_config.usePoliceSirenIndicator ? 1 : 0) != 0;
+    g_config.usePoliceArcIndicator   = readInt("EXT", "USE_ARC_INDICATOR",   g_config.usePoliceArcIndicator ? 1 : 0) != 0;
+
+    // =========================================================================
+    // [MONEY] / [WEAPON] / [PLACE_INFO] / [VEH_INFO] / [GPS_NAV] Auto-hide
+    // =========================================================================
+    g_config.alwaysShowMoney     = readInt("MONEY",      "ALWAYS_SHOW", 0) != 0;
+    g_config.alwaysShowWeapon    = readInt("WEAPON",     "ALWAYS_SHOW", 0) != 0;
+    g_config.alwaysShowPlaceInfo = readInt("PLACE_INFO", "ALWAYS_SHOW", 0) != 0;
+    g_config.alwaysShowVehInfo   = readInt("VEH_INFO",   "ALWAYS_SHOW", 0) != 0;
+
     LogWrite("config: loaded successfully (radar=%d, gps=%d, cards=%d, search=%d, auras=%d, arcs=%d)",
              g_config.enabled ? 1 : 0, g_config.enableGps ? 1 : 0, g_config.showInfoCards ? 1 : 0,
              g_config.enableWantedSearchRadius ? 1 : 0, g_config.enableCopAuras ? 1 : 0, g_config.enableCopArcs ? 1 : 0);
     g_pendingConfig = g_config;
     g_config = activeConfig;
+
+    // Finish the migration: rewrite 6hud.ini in the new layout, then drop the
+    // pre-regroup file so it cannot be mistaken for a newer config later.
+    if (wasMigrated) {
+        SaveConfig();
+        char legacyPath[MAX_PATH] = {};
+        GetLegacyIniPath(legacyPath, sizeof(legacyPath));
+        DeleteFileA(legacyPath);
+    }
 }
 
 void ApplyPendingConfig() {
@@ -949,6 +1058,31 @@ void SaveConfig() {
     KeyBindToString(g_config.infoHotkey, keyBuf, sizeof(keyBuf));
     writeStr("KEYS", "INFO_KEY", keyBuf);
     writeStr("KEYS", "INFO_KEY_PAD", PadBindToName(g_config.infoPad));
+
+    // [UI] Master toggles per HUD surface
+    writeInt("UI", "USE_RADAR",        g_config.enabled ? 1 : 0);
+    writeInt("UI", "USE_GPS_NAV",      g_config.enableGps ? 1 : 0);
+    writeInt("UI", "USE_PLACE_INFO",   g_config.usePlaceInfo ? 1 : 0);
+    writeInt("UI", "USE_VEH_INFO",     g_config.useVehicleInfo ? 1 : 0);
+    writeInt("UI", "USE_WANTED_LEVEL", g_config.useWantedStar ? 1 : 0);
+    writeInt("UI", "USE_WEAPON",       g_config.useWeaponUi ? 1 : 0);
+    writeInt("UI", "USE_MONEY",        g_config.useMoneyUi ? 1 : 0);
+
+    // [EXT] Extension module presence toggles
+    writeInt("EXT", "USE_FUEL",            g_config.useVehicleFuel ? 1 : 0);
+    writeInt("EXT", "USE_NITRO_BOOST",     g_config.enableControllableNitro ? 1 : 0);
+    writeInt("EXT", "USE_HEAT_AREA",       g_config.useWantedHeatArea ? 1 : 0);
+    writeInt("EXT", "USE_SEARCH_AREA",     g_config.useWantedSearchArea ? 1 : 0);
+    writeInt("EXT", "USE_CRIMINAL_PROFILE", g_config.useCriminalProfile ? 1 : 0);
+    writeInt("EXT", "USE_SNITCH_SYSTEM",   g_config.useSnitchSystem ? 1 : 0);
+    writeInt("EXT", "USE_SIREN_INDICATOR", g_config.usePoliceSirenIndicator ? 1 : 0);
+    writeInt("EXT", "USE_ARC_INDICATOR",   g_config.usePoliceArcIndicator ? 1 : 0);
+
+    // Auto-hide opt-out per element
+    writeInt("MONEY",      "ALWAYS_SHOW", g_config.alwaysShowMoney ? 1 : 0);
+    writeInt("WEAPON",     "ALWAYS_SHOW", g_config.alwaysShowWeapon ? 1 : 0);
+    writeInt("PLACE_INFO", "ALWAYS_SHOW", g_config.alwaysShowPlaceInfo ? 1 : 0);
+    writeInt("VEH_INFO",   "ALWAYS_SHOW", g_config.alwaysShowVehInfo ? 1 : 0);
 
     // [Global]
     writeStr("Global", "GAME_UNIT", g_config.gameUnit == 1 ? "IMPERIAL" : "METRIC");
