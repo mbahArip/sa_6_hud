@@ -38,6 +38,33 @@ static bool g_radarDead    = false;
 static bool g_playerOk     = false;
 static int  g_warmupFrames = 0;
 
+// Polls one or more gamepad buttons from the [KEYS] *_PAD binds. The mask is a
+// bitwise OR of ePadButton values, so a bind can require a chord if the user
+// ever wants one. Returns false immediately for PADBTN_NONE, keeping the whole
+// check free for keyboard-only players.
+static bool IsPadButtonDown(int padMask) {
+    if (padMask == PADBTN_NONE) return false;
+    CPad* pad = CPad::GetPad(0);
+    if (!pad) return false;
+    const CControllerState& state = pad->NewState;
+
+    if ((padMask & PADBTN_A)          && state.ButtonCross)    return true;
+    if ((padMask & PADBTN_B)          && state.ButtonCircle)   return true;
+    if ((padMask & PADBTN_X)          && state.ButtonSquare)   return true;
+    if ((padMask & PADBTN_Y)          && state.ButtonTriangle) return true;
+    if ((padMask & PADBTN_LB)         && state.LeftShoulder1)  return true;
+    if ((padMask & PADBTN_LT)         && state.LeftShoulder2)  return true;
+    if ((padMask & PADBTN_RB)         && state.RightShoulder1) return true;
+    if ((padMask & PADBTN_RT)         && state.RightShoulder2) return true;
+    if ((padMask & PADBTN_START)      && state.Start)          return true;
+    if ((padMask & PADBTN_BACK)       && state.Select)         return true;
+    if ((padMask & PADBTN_DPAD_UP)    && state.DPadUp)         return true;
+    if ((padMask & PADBTN_DPAD_DOWN)  && state.DPadDown)       return true;
+    if ((padMask & PADBTN_DPAD_LEFT)  && state.DPadLeft)       return true;
+    if ((padMask & PADBTN_DPAD_RIGHT) && state.DPadRight)      return true;
+    return false;
+}
+
 // The D3D device the icon/shaders/tile cache were created against. A save load
 // recreates the device without firing d3dLost/d3dReset, so every cached pointer
 // goes stale while still looking non-null. Comparing this each frame is the only

@@ -136,6 +136,128 @@ static std::vector<unsigned int> ParseModelKeys(const std::string& csv) {
     return keys;
 }
 
+// Parses a keyboard bind. Accepts a single character ("J"), a VK_ name
+// ("VK_F5"), or a hex code ("0x74"). Returns 0 for an empty/unrecognised value,
+// which callers treat as "unbound".
+static int ParseKeyBind(const std::string& raw) {
+    std::string s;
+    for (char c : raw) {
+        if (c != ' ' && c != '\t' && c != '\r' && c != '\n') s += c;
+    }
+    if (s.empty()) return 0;
+
+    if (s.size() > 2 && (s[0] == '0') && (s[1] == 'x' || s[1] == 'X')) {
+        return (int)strtol(s.c_str() + 2, nullptr, 16);
+    }
+
+    std::string upper;
+    for (char c : s) upper += (char)toupper((unsigned char)c);
+
+    if (upper.compare(0, 3, "VK_") == 0) {
+        static const struct { const char* name; int vk; } kVkNames[] = {
+            { "VK_ESCAPE", VK_ESCAPE }, { "VK_TAB", VK_TAB }, { "VK_SPACE", VK_SPACE },
+            { "VK_RETURN", VK_RETURN }, { "VK_BACK", VK_BACK }, { "VK_INSERT", VK_INSERT },
+            { "VK_DELETE", VK_DELETE }, { "VK_HOME", VK_HOME }, { "VK_END", VK_END },
+            { "VK_PRIOR", VK_PRIOR }, { "VK_NEXT", VK_NEXT }, { "VK_UP", VK_UP },
+            { "VK_DOWN", VK_DOWN }, { "VK_LEFT", VK_LEFT }, { "VK_RIGHT", VK_RIGHT },
+            { "VK_SHIFT", VK_SHIFT }, { "VK_CONTROL", VK_CONTROL }, { "VK_MENU", VK_MENU },
+            { "VK_OEM_1", VK_OEM_1 }, { "VK_OEM_2", VK_OEM_2 }, { "VK_OEM_3", VK_OEM_3 },
+            { "VK_OEM_4", VK_OEM_4 }, { "VK_OEM_5", VK_OEM_5 }, { "VK_OEM_6", VK_OEM_6 },
+            { "VK_OEM_7", VK_OEM_7 }, { "VK_OEM_PLUS", VK_OEM_PLUS }, { "VK_OEM_MINUS", VK_OEM_MINUS },
+            { "VK_OEM_COMMA", VK_OEM_COMMA }, { "VK_OEM_PERIOD", VK_OEM_PERIOD },
+            { "VK_F1", VK_F1 }, { "VK_F2", VK_F2 }, { "VK_F3", VK_F3 }, { "VK_F4", VK_F4 },
+            { "VK_F5", VK_F5 }, { "VK_F6", VK_F6 }, { "VK_F7", VK_F7 }, { "VK_F8", VK_F8 },
+            { "VK_F9", VK_F9 }, { "VK_F10", VK_F10 }, { "VK_F11", VK_F11 }, { "VK_F12", VK_F12 },
+            { "VK_NUMPAD0", VK_NUMPAD0 }, { "VK_NUMPAD1", VK_NUMPAD1 }, { "VK_NUMPAD2", VK_NUMPAD2 },
+            { "VK_NUMPAD3", VK_NUMPAD3 }, { "VK_NUMPAD4", VK_NUMPAD4 }, { "VK_NUMPAD5", VK_NUMPAD5 },
+            { "VK_NUMPAD6", VK_NUMPAD6 }, { "VK_NUMPAD7", VK_NUMPAD7 }, { "VK_NUMPAD8", VK_NUMPAD8 },
+            { "VK_NUMPAD9", VK_NUMPAD9 },
+        };
+        for (const auto& entry : kVkNames) {
+            if (upper == entry.name) return entry.vk;
+        }
+        // VK_A .. VK_Z and VK_0 .. VK_9 follow the ASCII codes directly.
+        if (upper.size() == 4 && upper[3] >= 'A' && upper[3] <= 'Z') return upper[3];
+        if (upper.size() == 4 && upper[3] >= '0' && upper[3] <= '9') return upper[3];
+        return 0;
+    }
+
+    if (s.size() == 1) {
+        char c = s[0];
+        if (c >= 'a' && c <= 'z') c -= ('a' - 'A');
+        return (int)(unsigned char)c;
+    }
+    return 0;
+}
+
+// Parses a gamepad bind from a button name. Returns PADBTN_NONE when the value is
+// empty, "NONE", or unrecognised.
+static int ParsePadBind(const std::string& raw) {
+    std::string upper;
+    for (char c : raw) {
+        if (c == ' ' || c == '\t' || c == '\r' || c == '\n' || c == '_' || c == '-') continue;
+        upper += (char)toupper((unsigned char)c);
+    }
+    if (upper.empty() || upper == "NONE") return PADBTN_NONE;
+
+    static const struct { const char* name; int mask; } kPadNames[] = {
+        { "A", PADBTN_A }, { "CROSS", PADBTN_A },
+        { "B", PADBTN_B }, { "CIRCLE", PADBTN_B },
+        { "X", PADBTN_X }, { "SQUARE", PADBTN_X },
+        { "Y", PADBTN_Y }, { "TRIANGLE", PADBTN_Y },
+        { "LB", PADBTN_LB }, { "L1", PADBTN_LB },
+        { "LT", PADBTN_LT }, { "L2", PADBTN_LT },
+        { "RB", PADBTN_RB }, { "R1", PADBTN_RB },
+        { "RT", PADBTN_RT }, { "R2", PADBTN_RT },
+        { "START", PADBTN_START },
+        { "BACK", PADBTN_BACK }, { "SELECT", PADBTN_BACK },
+        { "DUP", PADBTN_DPAD_UP }, { "DPADUP", PADBTN_DPAD_UP },
+        { "DDOWN", PADBTN_DPAD_DOWN }, { "DPADDOWN", PADBTN_DPAD_DOWN },
+        { "DLEFT", PADBTN_DPAD_LEFT }, { "DPADLEFT", PADBTN_DPAD_LEFT },
+        { "DRIGHT", PADBTN_DPAD_RIGHT }, { "DPADRIGHT", PADBTN_DPAD_RIGHT },
+    };
+    for (const auto& entry : kPadNames) {
+        if (upper == entry.name) return entry.mask;
+    }
+    return PADBTN_NONE;
+}
+
+// Renders a bind back to the INI, preferring the name form so the file stays
+// readable and round-trips through ParsePadBind.
+static const char* PadBindToName(int mask) {
+    switch (mask) {
+        case PADBTN_A: return "A";
+        case PADBTN_B: return "B";
+        case PADBTN_X: return "X";
+        case PADBTN_Y: return "Y";
+        case PADBTN_LB: return "LB";
+        case PADBTN_LT: return "LT";
+        case PADBTN_RB: return "RB";
+        case PADBTN_RT: return "RT";
+        case PADBTN_START: return "START";
+        case PADBTN_BACK: return "BACK";
+        case PADBTN_DPAD_UP: return "DUP";
+        case PADBTN_DPAD_DOWN: return "DDOWN";
+        case PADBTN_DPAD_LEFT: return "DLEFT";
+        case PADBTN_DPAD_RIGHT: return "DRIGHT";
+        default: return "NONE";
+    }
+}
+
+// Renders a key bind back to the INI. Single printable characters stay literal;
+// everything else becomes a 0x hex code so it round-trips exactly.
+static void KeyBindToString(int vk, char* out, size_t outSize) {
+    if (vk <= 0) {
+        snprintf(out, outSize, "");
+        return;
+    }
+    if (vk >= 0x20 && vk < 0x7F) {
+        snprintf(out, outSize, "%c", (char)vk);
+        return;
+    }
+    snprintf(out, outSize, "0x%02X", vk);
+}
+
 void LoadConfig() {
     Config activeConfig = g_config;
     char path[MAX_PATH] = {};
@@ -221,16 +343,11 @@ void LoadConfig() {
     g_config.paletteTextAccent   = readColor("palette", "text_accent", { 244, 63, 142, 255 });
 
     // =========================================================================
-    // [Global] System & Keybind Settings
+    // [KEYS] Keyboard + gamepad binds
     // =========================================================================
-    std::string hudKey = readStr("Global", "SHOW_HUD_KEY", "");
-    if (!hudKey.empty()) {
-        char k = hudKey[0];
-        if (k >= 'a' && k <= 'z') k -= ('a' - 'A');
-        g_config.showHudKey = (int)(unsigned char)k;
-    } else {
-        g_config.showHudKey = 'J';
-    }
+    g_config.showHudKey = ParseKeyBind(readStr("KEYS", "SHOW_HUD_KEY", readStr("Global", "SHOW_HUD_KEY", "J").c_str()));
+    if (g_config.showHudKey == 0) g_config.showHudKey = 'J';
+    g_config.showHudPad = ParsePadBind(readStr("KEYS", "SHOW_HUD_PAD", "NONE"));
 
     std::string globalUnit = readStr("Global", "GAME_UNIT", "");
     if (!globalUnit.empty()) {
@@ -305,13 +422,9 @@ void LoadConfig() {
     g_config.transitionSpeed     = readFloat("radar", "transition_speed", 0.025f);
     g_config.tiltPlayerBlip      = readInt("radar", "tilt_player_blip", 0) != 0;
 
-    std::string pKey = readStr("Minimap.Radar", "RADAR_ZOOM_OUT_KEY", "");
-    if (pKey.empty()) pKey = readStr("radar", "peek_key", "G");
-    if (!pKey.empty()) {
-        char k = pKey[0];
-        if (k >= 'a' && k <= 'z') k -= ('a' - 'A');
-        g_config.peekKey = (int)(unsigned char)k;
-    }
+    g_config.peekKey = ParseKeyBind(readStr("KEYS", "MAP_PEEK_KEY", readStr("Minimap.Radar", "RADAR_ZOOM_OUT_KEY", readStr("radar", "peek_key", "G").c_str()).c_str()));
+    if (g_config.peekKey == 0) g_config.peekKey = 'G';
+    g_config.peekPad = ParsePadBind(readStr("KEYS", "MAP_PEEK_PAD", "NONE"));
     float zoomMult = readFloat("Minimap.Radar", "RADAR_ZOOM_MULTIPLIER", -999999.0f);
     if (zoomMult < 0.0f) zoomMult = readFloat("radar", "peek_zoom_mult", 1.5f);
     g_config.peekZoomMult        = zoomMult;
@@ -471,12 +584,9 @@ void LoadConfig() {
     g_config.vehicleFuelRngMax   = readFloat("Minimap.Extension.VehicleFuel", "VEHICLE_FUEL_RNG_MAX",
         readFloat("Minimap.Vehicle", "VEHICLE_FUEL_RNG_MAX", readFloat("info_cards", "vehicle_fuel_rng_max", 0.80f)));
 
-    std::string iKey = readStr("info_cards", "info_hotkey", "J");
-    if (!iKey.empty()) {
-        char k = iKey[0];
-        if (k >= 'a' && k <= 'z') k -= ('a' - 'A');
-        g_config.infoHotkey = (int)(unsigned char)k;
-    }
+    g_config.infoHotkey = ParseKeyBind(readStr("KEYS", "INFO_KEY", readStr("info_cards", "info_hotkey", "J").c_str()));
+    if (g_config.infoHotkey == 0) g_config.infoHotkey = 'J';
+    g_config.infoPad = ParsePadBind(readStr("KEYS", "INFO_KEY_PAD", "NONE"));
     g_config.cardBackdropColor   = readColor("minimap.card", "background", readColor("info_cards", "card_backdrop_color", { 53, 49, 64, 230 }));
     g_config.cardDarkerColor     = readColor("minimap.card", "darker", { 34, 31, 41, 255 });
     g_config.cardTextColor       = readColor("minimap.card", "foreground", readColor("info_cards", "text_color", { 194, 190, 209, 255 }));
@@ -828,9 +938,19 @@ void SaveConfig() {
     writeColor("palette", "text_primary", g_config.paletteTextPrimary);
     writeColor("palette", "text_accent", g_config.paletteTextAccent);
 
+    // [KEYS] Keyboard + gamepad binds
+    char keyBuf[16] = {};
+    KeyBindToString(g_config.showHudKey, keyBuf, sizeof(keyBuf));
+    writeStr("KEYS", "SHOW_HUD_KEY", keyBuf);
+    writeStr("KEYS", "SHOW_HUD_PAD", PadBindToName(g_config.showHudPad));
+    KeyBindToString(g_config.peekKey, keyBuf, sizeof(keyBuf));
+    writeStr("KEYS", "MAP_PEEK_KEY", keyBuf);
+    writeStr("KEYS", "MAP_PEEK_PAD", PadBindToName(g_config.peekPad));
+    KeyBindToString(g_config.infoHotkey, keyBuf, sizeof(keyBuf));
+    writeStr("KEYS", "INFO_KEY", keyBuf);
+    writeStr("KEYS", "INFO_KEY_PAD", PadBindToName(g_config.infoPad));
+
     // [Global]
-    char hudKeyBuf[2] = { (char)g_config.showHudKey, '\0' };
-    writeStr("Global", "SHOW_HUD_KEY", hudKeyBuf);
     writeStr("Global", "GAME_UNIT", g_config.gameUnit == 1 ? "IMPERIAL" : "METRIC");
     writeFloat("Global", "UI_IDLE_TIMEOUT", g_config.uiIdleTimeout, "%.2f");
     writeFloat("Global", "BACKDROP_BLUR_INTENSITY", g_config.blurIntensity, "%.2f");
@@ -855,8 +975,6 @@ void SaveConfig() {
     writeFloat("Minimap.Radar", "RADAR_SIZE_SCALE", g_config.radarSizeScale, "%.2f");
     writeInt("Minimap.Radar", "SHOW_ON_FOOT", g_config.showOnFoot ? 1 : 0);
     writeStr("Minimap.Radar", "GAME_CLOCK_FORMAT", g_config.gameClockFormat == 0 ? "12H_FORMAT" : "24H_FORMAT");
-    char zoomKeyBuf[2] = { (char)g_config.peekKey, '\0' };
-    writeStr("Minimap.Radar", "RADAR_ZOOM_OUT_KEY", zoomKeyBuf);
     writeFloat("Minimap.Radar", "RADAR_ZOOM_MULTIPLIER", g_config.peekZoomMult, "%.2f");
     writeFloat("Minimap.Radar", "CLOSED_SPACE_ZOOM_MULTIPLIER", g_config.closedSpaceZoomMultiplier, "%.2f");
     writeInt("Minimap.Radar", "USE_ALTITUDE_ZOOM", g_config.enableAltitudeZoom ? 1 : 0);

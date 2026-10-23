@@ -5,6 +5,26 @@
 
 namespace hud6 {
 
+// Gamepad buttons addressable from the [KEYS] section. Stored as a bitmask in
+// Config so a bind can be keyboard-only, pad-only, or both.
+enum ePadButton : int {
+    PADBTN_NONE       = 0,
+    PADBTN_A          = 1 << 0,   // Cross / Square (PS)
+    PADBTN_B          = 1 << 1,   // Circle
+    PADBTN_X          = 1 << 2,   // Square
+    PADBTN_Y          = 1 << 3,   // Triangle
+    PADBTN_LB         = 1 << 4,   // L1
+    PADBTN_LT         = 1 << 5,   // L2
+    PADBTN_RB         = 1 << 6,   // R1
+    PADBTN_RT         = 1 << 7,   // R2
+    PADBTN_START      = 1 << 8,
+    PADBTN_BACK       = 1 << 9,   // Select
+    PADBTN_DPAD_UP    = 1 << 10,
+    PADBTN_DPAD_DOWN  = 1 << 11,
+    PADBTN_DPAD_LEFT  = 1 << 12,
+    PADBTN_DPAD_RIGHT = 1 << 13
+};
+
 struct Config {
     Config() {
         for (int i = 0; i < (int)HudModuleId::Count; ++i) {
@@ -24,7 +44,8 @@ struct Config {
     // =========================================================================
     // [Global] System & Keybind Settings
     // =========================================================================
-    int    showHudKey               = 'J';                   // Keybind to display hidden HUD elements (SHOW_HUD_KEY)
+    int    showHudKey               = 'J';                   // [KEYS] SHOW_HUD_KEY keyboard key to display hidden HUD elements
+    int    showHudPad               = PADBTN_NONE;           // [KEYS] SHOW_HUD_PAD gamepad button for the same action
     int    gameUnit                 = 0;                     // 0 = Metric (km), 1 = Imperial (mi) (GAME_UNIT)
     int    gameClockFormat          = 1;                     // 0 = 12H_FORMAT ("7:29 am"), 1 = 24H_FORMAT ("20:00") (GAME_CLOCK_FORMAT)
     float  uiIdleTimeout            = 4.0f;                  // Global UI auto-hide timeout in seconds (UI_IDLE_TIMEOUT)
@@ -63,7 +84,8 @@ struct Config {
     float  radarTiltDeg             = 35.0f;                 // Camera elevation angle in degrees (90 = top-down, 35 = 2.5D perspective)
     float  transitionSpeed          = 0.025f;                // Smooth camera zoom/mode interpolation speed (0.01 = slow, 0.05 = fast)
     bool   tiltPlayerBlip           = false;                 // Tilt player puck in 2.5D perspective with camera pitch (1 = on, 0 = off)
-    int    peekKey                  = 'G';                   // Keyboard key to hold for overview peek zoom-out
+    int    peekKey                  = 'G';                   // [KEYS] MAP_PEEK_KEY keyboard key to hold for overview peek zoom-out
+    int    peekPad                  = PADBTN_NONE;           // [KEYS] MAP_PEEK_PAD gamepad button for peek zoom-out
     float  peekZoomMult             = 1.5f;                  // Zoom range multiplier during peek mode (keeps same tilt angle)
     bool   enableTunnelZoom         = true;                  // Dynamic radar zoom in tunnels and underground (1 = on, 0 = off)
     float  tunnelZoomMult           = 0.65f;                 // Radar zoom multiplier inside tunnels (0.65 = 35% closer zoom)
@@ -144,7 +166,8 @@ struct Config {
     float  vehicleFuelConsumption   = 1.0f;                  // VEHICLE_FUEL_CONSUMPTION rate multiplier (1.0 = default)
     float  vehicleFuelRngMin        = 0.15f;                 // VEHICLE_FUEL_RNG_MIN (15%)
     float  vehicleFuelRngMax        = 0.80f;                 // VEHICLE_FUEL_RNG_MAX (80%)
-    int    infoHotkey               = 'J';                   // Keyboard hotkey to show/refresh info cards on demand
+    int    infoHotkey               = 'J';                   // [KEYS] INFO_KEY keyboard hotkey to show/refresh info cards on demand
+    int    infoPad                  = PADBTN_NONE;           // [KEYS] INFO_KEY_PAD gamepad button for the info-card refresh
     CRGBA  cardBackdropColor        = {  53,  49,  64, 230 }; // #353140 minimap.card.background
     CRGBA  cardDarkerColor          = {  34,  31,  41, 255 }; // #221f29 minimap.card.darker
     CRGBA  cardTextColor            = { 194, 190, 209, 255 }; // #c2bed1 minimap.card.foreground
