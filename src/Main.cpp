@@ -59,6 +59,9 @@ static void OnInitGame() {
 static void OnGameProcess() {
     hud6::Radar::Process();
     hud6::ApplyPendingConfig();
+    // Cheap when nothing changed: each branch early-outs on the module's state.
+    // Picks up menu toggles so a disabled module's hook is removed immediately.
+    hud6::Radar::SyncModulePatches();
     hud6::Menu::Process();
     UpdateVanillaPatches();
 }

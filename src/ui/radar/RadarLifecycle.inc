@@ -233,9 +233,9 @@ void Radar::DestroyShaders() {
 }
 
 void Radar::Init() {
-    ApplyGpsEnginePatches();
-    ApplyNitroPatches();
-    ApplyWantedPatches();
+    // Installs only the hooks whose module is enabled in the config. Modules the
+    // user disabled are never patched, so they cost nothing at runtime.
+    SyncModulePatches();
     g_radarDead = false;
     g_warmupFrames = 0;
     for (int i = 0; i < (int)HudModuleId::Count; ++i) {

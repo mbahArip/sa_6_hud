@@ -1,17 +1,88 @@
 static const float kPi = 3.141592653589793f;
 static const int   kMaxPathNodes = 2000;
 
+// =============================================================================
+// Lazy patch registry
+// =============================================================================
+// Every hook this plugin installs is recorded here with its original bytes, so a
+// module can be switched off at runtime instead of only at process exit. A module
+// that cannot be un-hooked safely (the GPS pathfinder buffer swap reallocates an
+// array the engine may be mid-search on) is marked restart-only instead.
+enum ePatchModule {
+    PATCHMOD_GPS_ENGINE = 0,
+    PATCHMOD_NITRO,
+    PATCHMOD_WANTED_STARS,
+    PATCHMOD_COUNT
+};
+
+struct PatchRecord {
+    void*         address;
+    int           size;
+    int           module;
+    unsigned char original[16];
+};
+
+static std::vector<PatchRecord> s_patchRecords;
+static bool s_moduleActive[PATCHMOD_COUNT] = {};
+
+// Restart-only modules are applied at boot and never torn down live.
+static bool s_moduleRestartOnly[PATCHMOD_COUNT] = {};
+
+static void SnapshotPatch(void* address, int size, int module) {
+    if (!address || size <= 0 || size > (int)sizeof(PatchRecord::original)) return;
+    for (const PatchRecord& record : s_patchRecords) {
+        if (record.address == address) return; // first snapshot wins
+    }
+    PatchRecord record = {};
+    record.address = address;
+    record.size = size;
+    record.module = module;
+    memcpy(record.original, address, size);
+    s_patchRecords.push_back(record);
+}
+
+static void RestoreModulePatches(int module) {
+    if (!s_moduleActive[module]) return;
+    if (s_moduleRestartOnly[module]) {
+        LogWrite("patch: module %d needs a restart to disable", module);
+        return;
+    }
+
+    for (const PatchRecord& record : s_patchRecords) {
+        if (record.module != module) continue;
+        DWORD oldProtect = 0;
+        if (VirtualProtect(record.address, record.size, PAGE_EXECUTE_READWRITE, &oldProtect)) {
+            memcpy(record.address, record.original, record.size);
+            VirtualProtect(record.address, record.size, oldProtect, &oldProtect);
+        }
+    }
+    FlushInstructionCache(GetCurrentProcess(), nullptr, 0);
+    s_moduleActive[module] = false;
+    LogWrite("patch: module %d restored to vanilla", module);
+}
+
 #define MAX_ENGINE_PATH_NODES 50000
 static int s_enginePathNodes[MAX_ENGINE_PATH_NODES] = {};
-static bool s_enginePatchesApplied = false;
 
 static void ApplyGpsEnginePatches() {
-    if (s_enginePatchesApplied) return;
-    s_enginePatchesApplied = true;
+    if (s_moduleActive[PATCHMOD_GPS_ENGINE]) return;
+
+    // The engine holds a pointer to a fixed node array; swapping it while a
+    // search is in flight corrupts the walk. Applied once at boot, never undone.
+    s_moduleRestartOnly[PATCHMOD_GPS_ENGINE] = true;
+    s_moduleActive[PATCHMOD_GPS_ENGINE] = true;
 
     for (int i = 0; i < MAX_ENGINE_PATH_NODES - 1; ++i) {
         s_enginePathNodes[i] = -1;
     }
+
+    SnapshotPatch((void*)(0x450ACD + 1), 4, PATCHMOD_GPS_ENGINE);
+    SnapshotPatch((void*)0x451782, 4, PATCHMOD_GPS_ENGINE);
+    SnapshotPatch((void*)0x451904, 4, PATCHMOD_GPS_ENGINE);
+    SnapshotPatch((void*)0x451AC3, 4, PATCHMOD_GPS_ENGINE);
+    SnapshotPatch((void*)0x451B33, 4, PATCHMOD_GPS_ENGINE);
+    SnapshotPatch((void*)0x4518F8, 4, PATCHMOD_GPS_ENGINE);
+    SnapshotPatch((void*)0x4519B0, 4, PATCHMOD_GPS_ENGINE);
 
     plugin::patch::SetFloat(0x450ACD + 1, 6000.0f);
     plugin::patch::SetPointer(0x451782, s_enginePathNodes);
@@ -122,9 +193,35 @@ static void __fastcall Hooked_NitrousControl(CAutomobile* automobile, int, char 
 }
 
 static void ApplyNitroPatches() {
-    if (s_nitroPatchesApplied) return;
-    s_nitroPatchesApplied = true;
+    if (s_moduleActive[PATCHMOD_NITRO]) return;
+    s_moduleActive[PATCHMOD_NITRO] = true;
+    SnapshotPatch((void*)0x6A3EA0, 5, PATCHMOD_NITRO);
     plugin::patch::RedirectJump(0x6A3EA0, Hooked_NitrousControl);
     LogWrite("nitro: nitrous control hook installed at 0x6A3EA0");
+}
+
+static void ApplyWantedPatches();   // defined in ui/wanted/RadarWanted.inc
+static void SyncModulePatchesImpl() {
+    const bool nitroWanted = g_config.enableControllableNitro;
+    if (nitroWanted && !s_moduleActive[PATCHMOD_NITRO]) {
+        ApplyNitroPatches();
+    } else if (!nitroWanted && s_moduleActive[PATCHMOD_NITRO]) {
+        RestoreModulePatches(PATCHMOD_NITRO);
+    }
+
+    const bool wantedStarsWanted = g_config.useWantedStar;
+    if (wantedStarsWanted && !s_moduleActive[PATCHMOD_WANTED_STARS]) {
+        ApplyWantedPatches();
+    } else if (!wantedStarsWanted && s_moduleActive[PATCHMOD_WANTED_STARS]) {
+        RestoreModulePatches(PATCHMOD_WANTED_STARS);
+    }
+
+    // The GPS pathfinder buffer swap is restart-only, so it is applied once and
+    // left alone. The engine keeps its pointer for the whole process.
+    ApplyGpsEnginePatches();
+}
+
+void Radar::SyncModulePatches() {
+    SyncModulePatchesImpl();
 }
 
