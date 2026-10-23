@@ -1,3 +1,65 @@
+// Saves the D3D9 state the tile blit clobbers and restores it afterwards. Without this
+// the game's own HUD/menu draw inherits our FVF, blend, sampler and pixel-shader state,
+// which showed up as jagged and untextured icons drawn after the map.
+struct MapDrawState {
+    IDirect3DDevice9* dev;
+    DWORD fvf, alphaBlend, srcBlend, destBlend, zEnable, lighting, cullMode;
+    IDirect3DBaseTexture9* texture;
+    IDirect3DPixelShader9* pixelShader;
+    DWORD minFilter, magFilter, mipFilter, addrU, addrV;
+    DWORD colorOp, colorArg1, colorArg2, alphaOp, alphaArg1, alphaArg2;
+
+    void Capture(IDirect3DDevice9* d) {
+        dev = d;
+        if (!dev) return;
+        dev->GetFVF(&fvf);
+        dev->GetRenderState(D3DRS_ALPHABLENDENABLE, &alphaBlend);
+        dev->GetRenderState(D3DRS_SRCBLEND, &srcBlend);
+        dev->GetRenderState(D3DRS_DESTBLEND, &destBlend);
+        dev->GetRenderState(D3DRS_ZENABLE, &zEnable);
+        dev->GetRenderState(D3DRS_LIGHTING, &lighting);
+        dev->GetRenderState(D3DRS_CULLMODE, &cullMode);
+        dev->GetTexture(0, &texture);
+        dev->GetPixelShader(&pixelShader);
+        dev->GetSamplerState(0, D3DSAMP_MINFILTER, &minFilter);
+        dev->GetSamplerState(0, D3DSAMP_MAGFILTER, &magFilter);
+        dev->GetSamplerState(0, D3DSAMP_MIPFILTER, &mipFilter);
+        dev->GetSamplerState(0, D3DSAMP_ADDRESSU, &addrU);
+        dev->GetSamplerState(0, D3DSAMP_ADDRESSV, &addrV);
+        dev->GetTextureStageState(0, D3DTSS_COLOROP, &colorOp);
+        dev->GetTextureStageState(0, D3DTSS_COLORARG1, &colorArg1);
+        dev->GetTextureStageState(0, D3DTSS_COLORARG2, &colorArg2);
+        dev->GetTextureStageState(0, D3DTSS_ALPHAOP, &alphaOp);
+        dev->GetTextureStageState(0, D3DTSS_ALPHAARG1, &alphaArg1);
+        dev->GetTextureStageState(0, D3DTSS_ALPHAARG2, &alphaArg2);
+    }
+
+    void Restore() const {
+        if (!dev) return;
+        dev->SetFVF(fvf);
+        dev->SetRenderState(D3DRS_ALPHABLENDENABLE, alphaBlend);
+        dev->SetRenderState(D3DRS_SRCBLEND, srcBlend);
+        dev->SetRenderState(D3DRS_DESTBLEND, destBlend);
+        dev->SetRenderState(D3DRS_ZENABLE, zEnable);
+        dev->SetRenderState(D3DRS_LIGHTING, lighting);
+        dev->SetRenderState(D3DRS_CULLMODE, cullMode);
+        dev->SetTexture(0, texture);
+        dev->SetPixelShader(pixelShader);
+        dev->SetSamplerState(0, D3DSAMP_MINFILTER, minFilter);
+        dev->SetSamplerState(0, D3DSAMP_MAGFILTER, magFilter);
+        dev->SetSamplerState(0, D3DSAMP_MIPFILTER, mipFilter);
+        dev->SetSamplerState(0, D3DSAMP_ADDRESSU, addrU);
+        dev->SetSamplerState(0, D3DSAMP_ADDRESSV, addrV);
+        dev->SetTextureStageState(0, D3DTSS_COLOROP, colorOp);
+        dev->SetTextureStageState(0, D3DTSS_COLORARG1, colorArg1);
+        dev->SetTextureStageState(0, D3DTSS_COLORARG2, colorArg2);
+        dev->SetTextureStageState(0, D3DTSS_ALPHAOP, alphaOp);
+        dev->SetTextureStageState(0, D3DTSS_ALPHAARG1, alphaArg1);
+        dev->SetTextureStageState(0, D3DTSS_ALPHAARG2, alphaArg2);
+        if (texture) texture->Release();
+    }
+};
+
 // Shared by the minimap and the pause map: blit one custom tile PNG onto a screen quad.
 // UVs are inset by half a texel so the LINEAR filter never averages the outermost texel
 // with the transparent region outside the image, which showed as a 1px seam per tile.
@@ -129,6 +191,11 @@ void Radar::DrawMap2D(const CRect& rect, float alpha) {
         RwIm2DVertexSetV(&v, vTex, RwIm2DGetNearScreenZ());
     };
 
+    // The custom-tile path uses raw D3D9 calls; snapshot the state so the game's own
+    // renderer is unaffected once the map is done.
+    MapDrawState savedState;
+    savedState.Capture((IDirect3DDevice9*)RwD3D9GetCurrentD3DDevice());
+
     for (int dy = minD; dy <= maxD; ++dy) {
         for (int dx = minD; dx <= maxD; ++dx) {
             int tx = px + dx, ty = py + dy;
@@ -231,6 +298,8 @@ void Radar::DrawMap2D(const CRect& rect, float alpha) {
             RwIm2DRenderPrimitive(rwPRIMTYPETRISTRIP, verts, 4);
         }
     }
+
+    savedState.Restore();
 }
 
 void Radar::Draw3dObjects(const CRect& rect, float alpha) {

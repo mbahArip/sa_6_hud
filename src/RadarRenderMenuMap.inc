@@ -8,6 +8,11 @@ void Radar::DrawMenuMapOverlay() {
     // RET while the 6HUD radar is active, so without this the pause map has no tiles at
     // all. Sea color is painted underneath and shows through transparent water pixels.
     if (g_config.enabled && g_config.useCustomMapTile && g_config.useCustomPauseMap) {
+        // Raw D3D9 tile blits below; snapshot and restore so blips, GPS ribbon and the
+        // rest of the frontend draw with the state they expect.
+        MapDrawState savedState;
+        savedState.Capture((IDirect3DDevice9*)RwD3D9GetCurrentD3DDevice());
+
         auto worldToScreen = [&](float wx, float wy, float& sx, float& sy) {
             CVector2D radarSpace;
             CRadar::TransformRealWorldPointToRadarSpace(radarSpace, CVector2D(wx, wy));
@@ -76,6 +81,8 @@ void Radar::DrawMenuMapOverlay() {
                 BlitMapTileBlended(tx + 12 * ty, sx0, sy0, sx1, sy1, sx2, sy2, sx3, sy3, 1.0f);
             }
         }
+
+        savedState.Restore();
     }
 
     // 1. Draw Wanted Search Area & Heat Area on Pause ESC Map

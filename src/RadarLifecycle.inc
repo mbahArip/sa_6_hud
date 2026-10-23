@@ -102,43 +102,37 @@ void Radar::CreateShaders() {
     }
 
     if (!g_pTexStarBase) {
-        g_pTexStarBase = LoadPngTexture("wanted\\starBase.png");
+        g_pTexStarBase = LoadTexture("icons\\wantedStar.dds");
     }
-    if (!g_pTexStarHeat) {
-        g_pTexStarHeat = LoadPngTexture("wanted\\starHeat.png");
-    }
-    if (!g_pTexStarLooking) {
-        g_pTexStarLooking = LoadPngTexture("wanted\\starLooking.png");
-    }
-    if (!g_pTexStarNoInfo) {
-        g_pTexStarNoInfo = LoadPngTexture("wanted\\starNoInfo.png");
+    if (!g_pTexStarBorder) {
+        g_pTexStarBorder = LoadTexture("icons\\wantedStarBorder.dds");
     }
     if (!g_pTexPersonnelArc) {
-        g_pTexPersonnelArc = LoadPngTexture("wanted\\personelArc.png");
+        g_pTexPersonnelArc = LoadTexture("ui\\cops_arrow.dds");
     }
     if (!g_pTexProfileIdentity) {
-        g_pTexProfileIdentity = LoadPngTexture("wanted\\profile\\identity.png");
+        g_pTexProfileIdentity = LoadTexture("icons\\profile\\identity.dds");
     }
     if (!g_pTexProfileVehicle) {
-        g_pTexProfileVehicle = LoadPngTexture("wanted\\profile\\vehicle.png");
+        g_pTexProfileVehicle = LoadTexture("icons\\profile\\vehicle.dds");
     }
     if (!g_pTexProfileOutfit) {
-        g_pTexProfileOutfit = LoadPngTexture("wanted\\profile\\outfit.png");
+        g_pTexProfileOutfit = LoadTexture("icons\\profile\\outfit.dds");
     }
     if (!g_pTexProfileWeapon) {
-        g_pTexProfileWeapon = LoadPngTexture("wanted\\profile\\weapon.png");
+        g_pTexProfileWeapon = LoadTexture("icons\\profile\\weapon.dds");
     }
-    if (!g_pTexIfruit)      g_pTexIfruit      = LoadPngTexture("radar\\ifruit.png");
-    if (!g_pTexMission)     g_pTexMission     = LoadPngTexture("radar\\mission.png");
-    if (!g_pTexZAbove)      g_pTexZAbove      = LoadPngTexture("radar\\z_above.png");
-    if (!g_pTexZBelow)      g_pTexZBelow      = LoadPngTexture("radar\\z_below.png");
-    if (!g_pTexPlayer)      g_pTexPlayer      = LoadPngTexture("radar\\player.png");
-    if (!g_pTexPlayerWanted)g_pTexPlayerWanted= LoadPngTexture("radar\\player_wanted.png");
-    if (!g_pTexNorth)       g_pTexNorth       = LoadPngTexture("radar\\north.png");
-    if (!g_pTexEngine)      g_pTexEngine      = LoadPngTexture("radar\\engine.png");
-    if (!g_pTexFuel)        g_pTexFuel        = LoadPngTexture("radar\\fuel.png");
-    if (!g_pTexNitro)       g_pTexNitro       = LoadPngTexture("radar\\nitro.png");
-    if (!g_pTexWallet)      g_pTexWallet      = LoadPngTexture("wallet.png");
+    if (!g_pTexIfruit)      g_pTexIfruit      = LoadTexture("icons\\ifruit.dds");
+    if (!g_pTexMission)     g_pTexMission     = LoadTexture("blips\\mission.dds");
+    if (!g_pTexZAbove)      g_pTexZAbove      = LoadTexture("blips\\z_above.dds");
+    if (!g_pTexZBelow)      g_pTexZBelow      = LoadTexture("blips\\z_below.dds");
+    if (!g_pTexPlayer)      g_pTexPlayer      = LoadTexture("blips\\player.dds");
+    if (!g_pTexPlayerWanted)g_pTexPlayerWanted= LoadTexture("blips\\player_wanted.dds");
+    if (!g_pTexNorth)       g_pTexNorth       = LoadTexture("blips\\north.dds");
+    if (!g_pTexEngine)      g_pTexEngine      = LoadTexture("icons\\engine.dds");
+    if (!g_pTexFuel)        g_pTexFuel        = LoadTexture("icons\\fuel.dds");
+    if (!g_pTexNitro)       g_pTexNitro       = LoadTexture("icons\\nitro.dds");
+    if (!g_pTexWallet)      g_pTexWallet      = LoadTexture("icons\\wallet.dds");
 }
 
 void Radar::DestroyShaders() {
@@ -156,9 +150,7 @@ void Radar::DestroyShaders() {
     }
 
     if (g_pTexStarBase)    { g_pTexStarBase->Release();    g_pTexStarBase = nullptr; }
-    if (g_pTexStarHeat)    { g_pTexStarHeat->Release();    g_pTexStarHeat = nullptr; }
-    if (g_pTexStarLooking) { g_pTexStarLooking->Release(); g_pTexStarLooking = nullptr; }
-    if (g_pTexStarNoInfo)  { g_pTexStarNoInfo->Release();  g_pTexStarNoInfo = nullptr; }
+    if (g_pTexStarBorder)  { g_pTexStarBorder->Release();  g_pTexStarBorder = nullptr; }
     if (g_pTexIfruit)      { g_pTexIfruit->Release();      g_pTexIfruit = nullptr; }
     if (g_pTexMission)     { g_pTexMission->Release();     g_pTexMission = nullptr; }
     if (g_pTexZAbove)      { g_pTexZAbove->Release();      g_pTexZAbove = nullptr; }

@@ -67,9 +67,7 @@ struct D3D2DVert {
 #define D3DFVF_2DVERT (D3DFVF_XYZRHW | D3DFVF_DIFFUSE | D3DFVF_TEX1)
 
 static IDirect3DTexture9* g_pTexStarBase    = nullptr;
-static IDirect3DTexture9* g_pTexStarHeat    = nullptr;
-static IDirect3DTexture9* g_pTexStarLooking = nullptr;
-static IDirect3DTexture9* g_pTexStarNoInfo  = nullptr;
+static IDirect3DTexture9* g_pTexStarBorder  = nullptr;
 static IDirect3DTexture9* g_pTexIfruit      = nullptr;
 static IDirect3DTexture9* g_pTexMission     = nullptr;
 static IDirect3DTexture9* g_pTexZAbove      = nullptr;
@@ -111,7 +109,7 @@ static float              s_clockFadeProgress = 0.0f;
 static float              s_hudKeyHoldTimer   = 0.0f;
 static float              s_playerWantedFade  = 0.0f;
 
-static IDirect3DTexture9* LoadPngTexture(const char* filename);
+static IDirect3DTexture9* LoadTexture(const char* filename);
 
 struct MapTileSlot {
     IDirect3DTexture9* pDayTex = nullptr;
@@ -136,6 +134,8 @@ static float GetDayNightBlend() {
     }
 }
 
+static IDirect3DTexture9* LoadTexture(const char* filename);
+
 static void GetMapTileTextures(int tileIndex, IDirect3DTexture9*& outDay, IDirect3DTexture9*& outNight) {
     if (tileIndex < 0 || tileIndex >= 144) {
         outDay = nullptr;
@@ -146,36 +146,20 @@ static void GetMapTileTextures(int tileIndex, IDirect3DTexture9*& outDay, IDirec
     if (!slot.searchedDay) {
         slot.searchedDay = true;
         char name[64];
-        snprintf(name, sizeof(name), "radar\\map\\day\\radar%02d.png", tileIndex);
-        slot.pDayTex = LoadPngTexture(name);
-        if (!slot.pDayTex) {
-            snprintf(name, sizeof(name), "radar\\map\\day\\radar%d.png", tileIndex);
-            slot.pDayTex = LoadPngTexture(name);
-        }
-        if (!slot.pDayTex) {
-            snprintf(name, sizeof(name), "radar\\map\\day\\%d.png", tileIndex);
-            slot.pDayTex = LoadPngTexture(name);
-        }
+        snprintf(name, sizeof(name), "maps\\day\\radar%02d.dds", tileIndex);
+        slot.pDayTex = LoadTexture(name);
     }
     if (!slot.searchedNight) {
         slot.searchedNight = true;
         char name[64];
-        snprintf(name, sizeof(name), "radar\\map\\night\\radar%02d.png", tileIndex);
-        slot.pNightTex = LoadPngTexture(name);
-        if (!slot.pNightTex) {
-            snprintf(name, sizeof(name), "radar\\map\\night\\radar%d.png", tileIndex);
-            slot.pNightTex = LoadPngTexture(name);
-        }
-        if (!slot.pNightTex) {
-            snprintf(name, sizeof(name), "radar\\map\\night\\%d.png", tileIndex);
-            slot.pNightTex = LoadPngTexture(name);
-        }
+        snprintf(name, sizeof(name), "maps\\night\\radar%02d.dds", tileIndex);
+        slot.pNightTex = LoadTexture(name);
     }
     outDay = slot.pDayTex;
     outNight = slot.pNightTex;
 }
 
-static IDirect3DTexture9* LoadPngTexture(const char* filename) {
+static IDirect3DTexture9* LoadTexture(const char* filename) {
     IDirect3DDevice9* dev = (IDirect3DDevice9*)RwD3D9GetCurrentD3DDevice();
     if (!dev) return nullptr;
 
@@ -198,7 +182,7 @@ static IDirect3DTexture9* LoadPngTexture(const char* filename) {
             D3DX_DEFAULT_NONPOW2,
             D3DX_DEFAULT,
             0,
-            D3DFMT_A8R8G8B8,
+            D3DFMT_UNKNOWN,
             D3DPOOL_MANAGED,
             D3DX_FILTER_TRIANGLE | D3DX_FILTER_DITHER,
             D3DX_FILTER_BOX,
@@ -215,7 +199,7 @@ static IDirect3DTexture9* LoadPngTexture(const char* filename) {
                 D3DX_DEFAULT_NONPOW2,
                 1,
                 0,
-                D3DFMT_A8R8G8B8,
+                D3DFMT_UNKNOWN,
                 D3DPOOL_MANAGED,
                 D3DX_FILTER_NONE,
                 D3DX_FILTER_NONE,
@@ -495,15 +479,15 @@ static IDirect3DTexture9* GetCustomWeaponIcon(eWeaponType type) {
     const char* name1 = GetWeaponNameString(type);
     if (name1) {
         char path[128];
-        snprintf(path, sizeof(path), "weapon\\%s.png", name1);
-        s_customWepIcons[type] = LoadPngTexture(path);
+        snprintf(path, sizeof(path), "weapon\\%s.dds", name1);
+        s_customWepIcons[type] = LoadTexture(path);
     }
     if (!s_customWepIcons[type]) {
         const char* name2 = GetWeaponAltNameString(type);
         if (name2) {
             char path[128];
-            snprintf(path, sizeof(path), "weapon\\%s.png", name2);
-            s_customWepIcons[type] = LoadPngTexture(path);
+            snprintf(path, sizeof(path), "weapon\\%s.dds", name2);
+            s_customWepIcons[type] = LoadTexture(path);
         }
     }
     return s_customWepIcons[type];
