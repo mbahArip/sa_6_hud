@@ -321,14 +321,24 @@ void LoadConfig() {
     // Must run before the read lambdas capture `path`: a pre-regroup config is
     // staged into 6hud.old.ini and copied back so the legacy chains below see it.
     bool wasMigrated = false;
-    if (!IniHasUiSection(path) && GetFileAttributesA(path) != INVALID_FILE_ATTRIBUTES) {
-        MigrateLegacyIni(path);
-        wasMigrated = true;
-    } else if (IniHasUiSection(path)) {
-        // Clean up a leftover staging file from an interrupted migration.
+    {
         char legacyPath[MAX_PATH] = {};
         GetLegacyIniPath(legacyPath, sizeof(legacyPath));
-        DeleteFileA(legacyPath);
+        const bool iniExists    = GetFileAttributesA(path) != INVALID_FILE_ATTRIBUTES;
+        const bool legacyExists = GetFileAttributesA(legacyPath) != INVALID_FILE_ATTRIBUTES;
+
+        if (!iniExists && legacyExists) {
+            // Only 6hud.old.ini is present: migrate it into a fresh 6hud.ini.
+            MigrateLegacyIni(path);
+            wasMigrated = true;
+        } else if (iniExists && !IniHasUiSection(path)) {
+            // Pre-regroup 6hud.ini, with or without a staging file next to it.
+            MigrateLegacyIni(path);
+            wasMigrated = true;
+        } else if (iniExists && legacyExists) {
+            // Already current: a leftover staging file means an interrupted run.
+            DeleteFileA(legacyPath);
+        }
     }
 
     auto readStr = [&](const char* section, const char* key, const char* def) -> std::string {
