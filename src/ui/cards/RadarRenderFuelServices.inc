@@ -70,6 +70,29 @@ void DrawKeyBadge(float cx, float cy, float radius, const char* badge,
     CFont::PrintString(cx, cy - radius * 0.30f, badge);
 }
 
+// Builds the display line for a row: label plus " ($12)" when priced.
+void FormatServiceLine(const char* label, int price, char* out, size_t outSize) {
+    if (price >= 0) snprintf(out, outSize, "%s ($%d)", label, price);
+    else            snprintf(out, outSize, "%s", label);
+}
+
+// Measures a row's total width without drawing it, so the block can be centred
+// while the rows inside it stay left-aligned against each other.
+float MeasureServiceRow(float radius, const char* label, int price) {
+    const float sH = ScreenH();
+    const float scale = (sH / 720.0f) * kServiceScale;
+
+    char line[64] = {};
+    FormatServiceLine(label, price, line, sizeof(line));
+
+    float labelScale = 0.62f * scale;
+    CFont::SetFontStyle(FONT_MENU);
+    CFont::SetProportional(true);
+    CFont::SetScale(labelScale, labelScale * 1.9f);
+
+    return radius * 2.0f + radius * 0.45f + CFont::GetStringWidth(line, true, false);
+}
+
 // Draws a full row: badge disc, then the label to its right. `price` is appended
 // as " ($12)" when non-negative.
 void DrawServiceRow(float leftX, float centerY, float radius, const char* badge,
@@ -81,8 +104,7 @@ void DrawServiceRow(float leftX, float centerY, float radius, const char* badge,
     DrawKeyBadge(leftX + radius, centerY, radius, badge, ringCol, fillCol, textCol, progress);
 
     char line[64] = {};
-    if (price >= 0) snprintf(line, sizeof(line), "%s ($%d)", label, price);
-    else            snprintf(line, sizeof(line), "%s", label);
+    FormatServiceLine(label, price, line, sizeof(line));
 
     float labelScale = 0.62f * scale;
     CFont::SetFontStyle(FONT_MENU);
@@ -125,8 +147,10 @@ void Radar::DrawFuelServices() {
         KeyBadgeName(g_config.serviceKey, g_config.servicePad, s_serviceUsingPad, badge, sizeof(badge));
 
         float radius = 20.0f * scale;
+        float totalW = MeasureServiceRow(radius, "Services", -1);
         float holdProgress = Clampf(s_serviceHoldTime, 0.0f, 1.0f);
-        DrawServiceRow(sx, sy, radius, badge, "Services", -1, trackCol, discBg, textCol, holdProgress);
+        DrawServiceRow(sx - totalW * 0.5f, sy, radius, badge, "Services", -1,
+                       trackCol, discBg, textCol, holdProgress);
         return;
     }
 
@@ -158,12 +182,20 @@ void Radar::DrawFuelServices() {
     float rowH = radius * 2.6f;
     float rowY = sy;
 
+    // Centre the block on the anchor, but align every row to the same left edge so
+    // the badges and labels line up with each other.
+    float blockW = 0.0f;
+    for (int i = 0; i < SERVICE_ROW_COUNT; ++i) {
+        blockW = std::max(blockW, MeasureServiceRow(radius, rows[i].label, rows[i].price));
+    }
+    float rowLeft = sx - blockW * 0.5f;
+
     for (int i = 0; i < SERVICE_ROW_COUNT; ++i) {
         bool selected = (i == s_serviceRow);
         CRGBA col = rows[i].enabled ? (selected ? accent : textCol) : dimCol;
         CRGBA ring = rows[i].enabled ? (selected ? accent : trackCol) : trackCol;
 
-        DrawServiceRow(sx, rowY, radius, rows[i].badge, rows[i].label, rows[i].price,
+        DrawServiceRow(rowLeft, rowY, radius, rows[i].badge, rows[i].label, rows[i].price,
                        ring, discBg, col, 0.0f);
         rowY += rowH;
     }
@@ -173,11 +205,7 @@ void Radar::DrawFuelServices() {
     KeyBadgeName(g_config.serviceBackKey, g_config.serviceBackPad, s_serviceUsingPad, backBadge, sizeof(backBadge));
 
     float backRadius = 16.0f * scale;
-    const float backScale = 0.62f * scale;
-    CFont::SetFontStyle(FONT_MENU);
-    CFont::SetProportional(true);
-    CFont::SetScale(backScale, backScale * 1.9f);
-    float backW = CFont::GetStringWidth("Back", true, false) + backRadius * 2.45f;
+    float backW = MeasureServiceRow(backRadius, "Back", -1);
 
     DrawServiceRow(ScreenW() - backW - 40.0f * scale, ScreenH() - 60.0f * scale,
                    backRadius, backBadge, "Back", -1, trackCol, discBg, textCol, 0.0f);
