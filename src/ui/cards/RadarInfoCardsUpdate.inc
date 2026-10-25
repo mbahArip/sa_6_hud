@@ -535,36 +535,40 @@ static bool s_servicePadDisabled = false;
 
 // Locks the player out of every input the services list could swallow.
 //
-// DisablePlayerControls alone is not enough: it is a 9-bit flag union, and the
-// individual bDisablePlayer* fields cover buttons but not analog driving. Throttle,
-// steering and braking are read straight from CPad::NewState into the vehicle, so
-// the vehicle state is zeroed separately every frame by FreezeServiceVehicle().
+// DisablePlayerControls is a bitfield union, not a master switch: assigning 1 only
+// set bit 0, which is an unused leftover, so the game ignored it entirely. The
+// meaningful bits are the ones the stock game uses for a garage visit:
+//   bit 2 = bPlayerAwaitsInGarage    (what TransFender sets while its menu is up)
+//   bit 7 = bPlayerSafeForCutscene
+// Setting those two puts the game into its own "player is busy" state, so the ped,
+// the vehicle and the script engine all stop accepting input instead of only the
+// pad state being cleared underneath them.
+static const unsigned short kServiceControlBits = 0x0084; // bit 2 + bit 7
+
 static void SetServiceInputLock(bool locked) {
     CPad* pad = CPad::GetPad(0);
     if (!pad) return;
     if (locked) {
+        pad->DisablePlayerControls    |= kServiceControlBits;
         pad->bDisablePlayerEnterCar    = 1;
         pad->bDisablePlayerJump        = 1;
         pad->bDisablePlayerDuck        = 1;
         pad->bDisablePlayerFireWeapon  = 1;
         pad->bDisablePlayerCycleWeapon = 1;
 
-        // Zoom in slightly for the duration of the list. The active cam's FOV is
-        // driven directly; LerpFOV fights the camera's own FOV processing and
-        // m_bCameraPersistPosition is a cutscene flag that glitches gameplay cams.
-        s_servicePrevFov = TheCamera.m_aCams[TheCamera.m_nActiveCam].m_fFOV;
-        s_serviceFovLocked = true;
+        // Freeze the rendered camera. The matrix is what the renderer actually
+        // consumes, and gameProcessEvent runs after CCamera::Process, so a write
+        // here survives until the next frame's camera pass.
+        s_servicePrevCamMatrix = TheCamera.m_mCameraMatrix;
+        s_serviceCamLocked = true;
     } else {
+        pad->DisablePlayerControls    &= (unsigned short)~kServiceControlBits;
         pad->bDisablePlayerEnterCar    = 0;
         pad->bDisablePlayerJump        = 0;
         pad->bDisablePlayerDuck        = 0;
         pad->bDisablePlayerFireWeapon  = 0;
         pad->bDisablePlayerCycleWeapon = 0;
-
-        if (s_serviceFovLocked) {
-            TheCamera.m_aCams[TheCamera.m_nActiveCam].m_fFOV = s_servicePrevFov;
-            s_serviceFovLocked = false;
-        }
+        s_serviceCamLocked = false;
     }
 }
 
@@ -597,8 +601,12 @@ static void FreezeServiceInput(CVehicle* veh) {
         veh->m_vecTurnSpeed   = CVector(0.0f, 0.0f, 0.0f);
     }
 
-    if (s_serviceFovLocked) {
-        TheCamera.m_aCams[TheCamera.m_nActiveCam].m_fFOV = s_servicePrevFov * 0.78f;
+    if (s_serviceCamLocked) {
+        // Rewrite the rendered camera transform every frame. This is what actually
+        // holds the view still: the matrix is the final output of CCamera::Process,
+        // so overwriting it here locks the picture in place regardless of what the
+        // camera wanted to do this frame.
+        TheCamera.m_mCameraMatrix = s_servicePrevCamMatrix;
     }
 }
 

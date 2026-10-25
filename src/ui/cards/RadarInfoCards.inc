@@ -82,8 +82,8 @@ static bool     s_serviceLastSelect  = false;
 static bool     s_serviceLastUp      = false;
 static bool     s_serviceLastDown    = false;
 static bool     s_serviceLastBack    = false;
-static float    s_servicePrevFov     = 70.0f;
-static bool     s_serviceFovLocked   = false;
+static CMatrix  s_servicePrevCamMatrix;
+static bool     s_serviceCamLocked   = false;
 
 struct VehicleFuelExt {
     float fuelLevel = -1.0f;
