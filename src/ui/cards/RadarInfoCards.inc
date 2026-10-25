@@ -82,6 +82,7 @@ static bool     s_serviceLastSelect  = false;
 static bool     s_serviceLastUp      = false;
 static bool     s_serviceLastDown    = false;
 static bool     s_serviceLastBack    = false;
+static bool     s_servicePrevPersist = false;
 
 struct VehicleFuelExt {
     float fuelLevel = -1.0f;

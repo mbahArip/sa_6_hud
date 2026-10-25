@@ -473,7 +473,9 @@ static void __cdecl Hooked_MoneyArmourHealthCheat() {
     CVehicle* veh = player->m_pVehicle;
     if (!IsFuelVehicle(veh)) return;
 
-    s_vehicleFuelExt.Get(veh).fuelLevel = 1.0f;
+    VehicleFuelExt& ext = s_vehicleFuelExt.Get(veh);
+    ext.initialized = true;
+    ext.fuelLevel = 1.0f;
 }
 
 // Renders a key code as the short name shown inside the "(KEY)" badge.
@@ -522,7 +524,8 @@ static int RefuelPrice(const CVector& pumpPos, float currentFuel) {
     return (int)ceilf(price);
 }
 
-// Damage-scaled repair price, clamped to the configured range.
+// Damage-scaled repair price, clamped to the configured range. Based on body
+// damage only, since the engine is not part of this service.
 static int RepairPrice(const CVehicle* veh) {
     float t = Clampf((1000.0f - veh->m_fHealth) / 750.0f, 0.0f, 1.0f);
     return (int)ceilf(Lerpf(g_config.repairPriceMin, g_config.repairPriceMax, t));
@@ -530,12 +533,88 @@ static int RepairPrice(const CVehicle* veh) {
 
 static bool s_servicePadDisabled = false;
 
+// Locks the player out of every input the services list could swallow. Enter/exit
+// vehicle is the one that matters most: without it, pressing the confirm key
+// ejects the player mid-purchase.
+static void SetServiceInputLock(bool locked) {
+    CPad* pad = CPad::GetPad(0);
+    if (!pad) return;
+    if (locked) {
+        pad->DisablePlayerControls     = 1;
+        pad->bDisablePlayerEnterCar    = 1;
+        pad->bDisablePlayerJump        = 1;
+        pad->bDisablePlayerDuck        = 1;
+        pad->bDisablePlayerFireWeapon  = 1;
+        pad->bDisablePlayerCycleWeapon = 1;
+        // Freeze the camera on the pump instead of letting it orbit or snap.
+        s_servicePrevPersist = TheCamera.m_bCameraPersistPosition;
+        TheCamera.m_bCameraPersistPosition = true;
+        TheCamera.LerpFOV(0.75f, 1.0f, 0.4f, true);
+    } else {
+        pad->DisablePlayerControls     = 0;
+        pad->bDisablePlayerEnterCar    = 0;
+        pad->bDisablePlayerJump        = 0;
+        pad->bDisablePlayerDuck        = 0;
+        pad->bDisablePlayerFireWeapon  = 0;
+        pad->bDisablePlayerCycleWeapon = 0;
+        TheCamera.m_bCameraPersistPosition = s_servicePrevPersist;
+        TheCamera.LerpFOV(1.0f, 1.0f, 0.4f, true);
+    }
+}
+
+// Repairs the body only: panels, doors, lights and tyres come back, but engine
+// health and engine status are left exactly as they were, so the telemetry gauge
+// keeps reading the real wear.
+static void RepairBodyOnly(CVehicle* veh) {
+    if (!veh) return;
+    switch (veh->m_nVehicleSubClass) {
+        case VEHICLE_AUTOMOBILE:
+        case VEHICLE_MTRUCK:
+        case VEHICLE_QUAD: {
+            CAutomobile* car = static_cast<CAutomobile*>(veh);
+            const float hp = veh->m_fHealth;
+            const unsigned char engine = car->m_damageManager.m_nEngineStatus;
+            car->m_damageManager.ResetDamageStatus();
+            car->m_damageManager.m_nEngineStatus = engine;
+            veh->m_fHealth = hp;
+            break;
+        }
+        default:
+            break;
+    }
+}
+
+// True when the body has anything worth repairing. Engine damage alone does not
+// count, because this service deliberately leaves the engine untouched.
+static bool BodyNeedsRepair(const CVehicle* veh) {
+    if (!veh) return false;
+    switch (veh->m_nVehicleSubClass) {
+        case VEHICLE_AUTOMOBILE:
+        case VEHICLE_MTRUCK:
+        case VEHICLE_QUAD: {
+            const CAutomobile* car = static_cast<const CAutomobile*>(veh);
+            if (car->m_damageManager.m_nPanelsStatus != 0) return true;
+            if (car->m_damageManager.m_nLightsStatus != 0) return true;
+            for (int i = 0; i < 6; ++i) {
+                if (car->m_damageManager.m_anDoorsStatus[i] != 0) return true;
+            }
+            for (int i = 0; i < 4; ++i) {
+                if (car->m_damageManager.m_anWheelsStatus[i] != 0) return true;
+            }
+            return false;
+        }
+        default:
+            return false;
+    }
+}
+
 void Radar::UpdateFuelServices() {
     CPlayerPed* player = FindPlayerPed(0);
     if (!player) { s_serviceOpen = false; s_servicePromptAlpha = 0.0f; return; }
 
     CVehicle* veh = GetStablePlayerVehicle(player);
-    bool eligible = g_config.useVehicleFuel && IsFuelVehicle(veh) && veh->m_pDriver == player;    bool wanted = player->m_pPlayerData && player->m_pPlayerData->m_pWanted
+    bool eligible = g_config.useVehicleFuel && IsFuelVehicle(veh) && veh->m_pDriver == player;
+    bool wanted = player->m_pPlayerData && player->m_pPlayerData->m_pWanted
                   && player->m_pPlayerData->m_pWanted->m_nWantedLevel > 0;
 
     // Nearest pump within reach, and whether the car is actually parked there.
@@ -561,7 +640,7 @@ void Radar::UpdateFuelServices() {
     // Controls are only held while the menu is actually up. Doing this before the
     // open/closed split guarantees the pad is released on every exit path.
     if (!s_serviceOpen && s_servicePadDisabled) {
-        CPad::GetPad(0)->DisablePlayerControls = 0;
+        SetServiceInputLock(false);
         s_servicePadDisabled = false;
     }
 
@@ -590,7 +669,7 @@ void Radar::UpdateFuelServices() {
                     s_serviceRow = SERVICE_ROW_REFUEL;
                     s_serviceHoldTime = 0.0f;
                     if (!s_servicePadDisabled) {
-                        CPad::GetPad(0)->DisablePlayerControls = 1;
+                        SetServiceInputLock(true);
                         s_servicePadDisabled = true;
                     }
                 }
@@ -625,11 +704,10 @@ void Radar::UpdateFuelServices() {
             }
         } else {
             int price = RepairPrice(veh);
-            bool damaged = veh->m_fHealth < 995.0f;
-            if (damaged && CWorld::Players[0].m_nMoney >= price) {
+            if (BodyNeedsRepair(veh) && CWorld::Players[0].m_nMoney >= price) {
                 CWorld::Players[0].m_nMoney -= price;
-                veh->Fix();
-                LogWrite("fuel: repaired for $%d", price);
+                RepairBodyOnly(veh);
+                LogWrite("fuel: body repaired for $%d", price);
             }
         }
     }
@@ -637,7 +715,7 @@ void Radar::UpdateFuelServices() {
     s_serviceLastBack = backDown;
 
     if (!s_serviceOpen && s_servicePadDisabled) {
-        CPad::GetPad(0)->DisablePlayerControls = 0;
+        SetServiceInputLock(false);
         s_servicePadDisabled = false;
     }
 }
