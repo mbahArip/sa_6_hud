@@ -9,6 +9,10 @@
 
 namespace {
 
+// Hardcoded UI scale for the services overlay. Kept as a constant because the
+// layout is tuned by eye, not by players.
+const float kServiceScale = 0.80f;
+
 // Projects a world position to screen pixels. Returns false when the point is
 // behind the camera or off screen.
 bool ProjectAnchor(const CVector& worldPos, float& outX, float& outY) {
@@ -66,15 +70,19 @@ void DrawKeyBadge(float cx, float cy, float radius, const char* badge,
     CFont::PrintString(cx, cy - radius * 0.30f, badge);
 }
 
-// Draws a full row: badge disc, then the label to its right. Returns the row's
-// total width so callers can centre the block.
-float DrawServiceRow(float leftX, float centerY, float radius, const char* badge,
-                     const char* label, CRGBA ringCol, CRGBA fillCol, CRGBA textCol,
-                     float progress) {
+// Draws a full row: badge disc, then the label to its right. `price` is appended
+// as " ($12)" when non-negative.
+void DrawServiceRow(float leftX, float centerY, float radius, const char* badge,
+                    const char* label, int price, CRGBA ringCol, CRGBA fillCol,
+                    CRGBA textCol, float progress) {
     const float sH = ScreenH();
-    const float scale = sH / 720.0f;
+    const float scale = (sH / 720.0f) * kServiceScale;
 
     DrawKeyBadge(leftX + radius, centerY, radius, badge, ringCol, fillCol, textCol, progress);
+
+    char line[64] = {};
+    if (price >= 0) snprintf(line, sizeof(line), "%s ($%d)", label, price);
+    else            snprintf(line, sizeof(line), "%s", label);
 
     float labelScale = 0.62f * scale;
     CFont::SetFontStyle(FONT_MENU);
@@ -87,23 +95,7 @@ float DrawServiceRow(float leftX, float centerY, float radius, const char* badge
     CFont::SetColor(textCol);
 
     float labelX = leftX + radius * 2.0f + radius * 0.45f;
-    CFont::PrintString(labelX, centerY - radius * 0.42f, label);
-
-    float labelW = CFont::GetStringWidth(label, true, false);
-    return radius * 2.0f + radius * 0.45f + labelW;
-}
-
-// Measures a row without drawing it, for centring.
-float MeasureServiceRow(float radius, const char* label) {
-    const float sH = ScreenH();
-    const float scale = sH / 720.0f;
-    const float labelScale = 0.62f * scale;
-
-    CFont::SetFontStyle(FONT_MENU);
-    CFont::SetProportional(true);
-    CFont::SetScale(labelScale, labelScale * 1.9f);
-    float labelW = CFont::GetStringWidth(label, true, false);
-    return radius * 2.0f + radius * 0.45f + labelW;
+    CFont::PrintString(labelX, centerY - radius * 0.42f, line);
 }
 
 } // namespace
@@ -116,7 +108,7 @@ void Radar::DrawFuelServices() {
     if (!ProjectAnchor(s_serviceAnchor, sx, sy)) return;
 
     const float sH = ScreenH();
-    const float scale = sH / 720.0f;
+    const float scale = (sH / 720.0f) * kServiceScale;
     const float alphaMod = s_servicePromptAlpha;
 
     CRGBA textCol  = ModColor(CRGBA(240, 240, 245, 255), alphaMod);
@@ -133,32 +125,34 @@ void Radar::DrawFuelServices() {
         KeyBadgeName(g_config.serviceKey, g_config.servicePad, s_serviceUsingPad, badge, sizeof(badge));
 
         float radius = 20.0f * scale;
-        float totalW = MeasureServiceRow(radius, "Services");
         float holdProgress = Clampf(s_serviceHoldTime, 0.0f, 1.0f);
-        DrawServiceRow(sx - totalW * 0.5f, sy, radius, badge, "Services", trackCol, discBg, textCol, holdProgress);
+        DrawServiceRow(sx, sy, radius, badge, "Services", -1, trackCol, discBg, textCol, holdProgress);
         return;
     }
 
-    // Menu open: two rows stacked below the anchor.
-    struct RowView { char badge[16]; char label[48]; bool enabled; };
+    // Menu open: two rows stacked below the anchor, left-aligned on it.
+    struct RowView { char badge[16]; char label[48]; bool enabled; int price; };
     RowView rows[SERVICE_ROW_COUNT] = {};
 
     for (int i = 0; i < SERVICE_ROW_COUNT; ++i) {
         KeyBadgeName(g_config.serviceSelectKey, g_config.serviceSelectPad, s_serviceUsingPad,
                      rows[i].badge, sizeof(rows[i].badge));
+        rows[i].price = -1;
     }
 
     VehicleFuelExt& ext = s_vehicleFuelExt.Get(veh);
     bool tankFull = ext.fuelLevel >= 0.99f;
-    bool bodyOk = !NeedsRepair(veh);
+    bool needsRepair = NeedsRepair(veh);
 
     snprintf(rows[SERVICE_ROW_REFUEL].label, sizeof(rows[SERVICE_ROW_REFUEL].label), "%s",
              tankFull ? "Tank is full" : "Refuel");
     rows[SERVICE_ROW_REFUEL].enabled = !tankFull;
+    if (!tankFull) rows[SERVICE_ROW_REFUEL].price = RefuelPrice(s_serviceAnchor, ext.fuelLevel);
 
     snprintf(rows[SERVICE_ROW_REPAIR].label, sizeof(rows[SERVICE_ROW_REPAIR].label), "%s",
-             bodyOk ? "No repair needed" : "Repair");
-    rows[SERVICE_ROW_REPAIR].enabled = !bodyOk;
+             needsRepair ? "Repair" : "No repair needed");
+    rows[SERVICE_ROW_REPAIR].enabled = needsRepair;
+    if (needsRepair) rows[SERVICE_ROW_REPAIR].price = RepairPrice(veh);
 
     float radius = 22.0f * scale;
     float rowH = radius * 2.6f;
@@ -169,8 +163,7 @@ void Radar::DrawFuelServices() {
         CRGBA col = rows[i].enabled ? (selected ? accent : textCol) : dimCol;
         CRGBA ring = rows[i].enabled ? (selected ? accent : trackCol) : trackCol;
 
-        float totalW = MeasureServiceRow(radius, rows[i].label);
-        DrawServiceRow(sx - totalW * 0.5f, rowY, radius, rows[i].badge, rows[i].label,
+        DrawServiceRow(sx, rowY, radius, rows[i].badge, rows[i].label, rows[i].price,
                        ring, discBg, col, 0.0f);
         rowY += rowH;
     }
@@ -180,7 +173,12 @@ void Radar::DrawFuelServices() {
     KeyBadgeName(g_config.serviceBackKey, g_config.serviceBackPad, s_serviceUsingPad, backBadge, sizeof(backBadge));
 
     float backRadius = 16.0f * scale;
-    float backW = MeasureServiceRow(backRadius, "Back");
+    const float backScale = 0.62f * scale;
+    CFont::SetFontStyle(FONT_MENU);
+    CFont::SetProportional(true);
+    CFont::SetScale(backScale, backScale * 1.9f);
+    float backW = CFont::GetStringWidth("Back", true, false) + backRadius * 2.45f;
+
     DrawServiceRow(ScreenW() - backW - 40.0f * scale, ScreenH() - 60.0f * scale,
-                   backRadius, backBadge, "Back", trackCol, discBg, textCol, 0.0f);
+                   backRadius, backBadge, "Back", -1, trackCol, discBg, textCol, 0.0f);
 }

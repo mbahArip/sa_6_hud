@@ -526,8 +526,7 @@ static int RefuelPrice(const CVector& pumpPos, float currentFuel) {
     return (int)ceilf(price);
 }
 
-// Damage-scaled repair price, clamped to the configured range. Based on body
-// damage only, since the engine is not part of this service.
+// Damage-scaled repair price, clamped to the configured range.
 static int RepairPrice(const CVehicle* veh) {
     float t = Clampf((1000.0f - veh->m_fHealth) / 750.0f, 0.0f, 1.0f);
     return (int)ceilf(Lerpf(g_config.repairPriceMin, g_config.repairPriceMax, t));
@@ -572,19 +571,22 @@ static void ReleaseServiceControlBits() {
     pad->bDisablePlayerCycleWeapon = 0;
 }
 
-// Builds the dolly target: a camera parked behind the car looking at the pump.
+// Builds the dolly target: a camera placed on the player->pump line, looking
+// straight at the pump so it lands dead-centre regardless of how the car is parked.
 static void BeginServiceCamera(const CVector& vehPos, const CVector& pumpPos) {
     s_serviceStartCamMatrix = TheCamera.m_mCameraMatrix;
 
-    // Stand off behind the car, on the far side from the pump, and slightly above.
-    CVector toPump = pumpPos - vehPos;
-    toPump.z = 0.0f;
-    if (toPump.Magnitude2D() < 0.01f) toPump = CVector(0.0f, 1.0f, 0.0f);
-    toPump = toPump.Normalized();
+    // Direction from the pump back toward the car, flattened. The camera sits on
+    // this line, so the pump stays centred no matter the car's heading.
+    CVector awayFromPump = vehPos - pumpPos;
+    awayFromPump.z = 0.0f;
+    if (awayFromPump.Magnitude2D() < 0.5f) awayFromPump = CVector(0.0f, 1.0f, 0.0f);
+    awayFromPump = awayFromPump.Normalized();
 
-    s_serviceCamFromPos = s_serviceStartCamMatrix.GetPosition();
-    s_serviceCamToPos   = vehPos - toPump * 5.5f + CVector(0.0f, 0.0f, 2.2f);
-    s_serviceCamLookAt  = pumpPos + CVector(0.0f, 0.0f, 0.8f);
+    // Stand off far enough to frame the pump plus the car, and above it a little.
+    s_serviceCamFromPos = s_serviceStartCamMatrix.pos;
+    s_serviceCamToPos   = pumpPos + awayFromPump * 7.0f + CVector(0.0f, 0.0f, 2.4f);
+    s_serviceCamLookAt  = pumpPos + CVector(0.0f, 0.0f, 0.9f);
     s_serviceCamBlend   = 0.0f;
     s_serviceCamLocked  = true;
 }
@@ -617,6 +619,11 @@ static void UpdateServiceCamera(float dt) {
     cam.right = right;
     cam.up    = right.Cross(at).Normalized();
     cam.at    = at;
+
+    // The game keeps the previous frame's transform here and blends against it for
+    // several effects. Leaving it stale makes the renderer use the old camera, which
+    // is why the dolly appeared to do nothing. Keep both in sync.
+    TheCamera.m_mCameraMatrixOld = cam;
 }
 
 // Holds the whole game still while the list is open.
@@ -742,9 +749,10 @@ void Radar::UpdateFuelServices() {
         }
 
         if (canOpen) {
-            // Anchor at the player's head height rather than the pump's top, so the
-            // label reads at eye level instead of floating above the canopy.
-            s_serviceAnchor = player->GetPosition() + CVector(0.0f, 0.0f, 0.65f);
+            // Pump location, player head height: reads at eye level while staying
+            // over the pump instead of following the car.
+            s_serviceAnchor = CVector(pumpPos.x, pumpPos.y,
+                                      player->GetPosition().z + 0.65f);
             s_servicePromptAlpha = std::min(1.0f, s_servicePromptAlpha + dt * 6.0f);
             if (holdDown) {
                 s_serviceHoldTime += dt;
@@ -791,7 +799,11 @@ void Radar::UpdateFuelServices() {
             int price = RepairPrice(veh);
             if (NeedsRepair(veh) && CWorld::Players[0].m_nMoney >= price) {
                 CWorld::Players[0].m_nMoney -= price;
+                // Fix() restores panels, doors, lights, tyres and engine status via
+                // the vtable, but it never writes m_fHealth - that is what the engine
+                // gauge reads. The vanilla shop sets it explicitly afterwards.
                 veh->Fix();
+                veh->m_fHealth = 1000.0f;
                 LogWrite("fuel: repaired for $%d", price);
             }
         }
