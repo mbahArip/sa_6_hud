@@ -311,10 +311,9 @@ void Radar::UpdateInfoCards() {
     s_gaugeSlots[GAUGE_HEALTH].active = healthActive;
 
     // G2: Fuel Gauge
-    // Cosmetic at 100% when USE_VEHICLE_FUEL = 0. When 1, randomizes upon entry (15-80%). Consumes ~1% per 150m.
-    bool isBicycle = (veh && (veh->m_nVehicleSubClass == 9 /*VEHICLE_BMX*/ || veh->m_nModelIndex == 481 || veh->m_nModelIndex == 509 || veh->m_nModelIndex == 510));
-    bool isTrailer = (veh && veh->m_nVehicleSubClass == 4 /*VEHICLE_TRAILER*/);
-    bool needsFuel = (!isBicycle && !isTrailer);
+    // Cosmetic at 100% when USE_VEHICLE_FUEL = 0. When 1, randomizes upon entry
+    // within [VEHICLE_FUEL_RNG_MIN, VEHICLE_FUEL_RNG_MAX] and drains while driving.
+    bool needsFuel = IsFuelVehicle(veh);
 
     bool fuelActive = g_config.showGaugeFuel && s_inVehicle && needsFuel;
     if (fuelActive && veh) {
@@ -337,18 +336,7 @@ void Radar::UpdateInfoCards() {
             float dist = (g_playerPos - s_lastVehPos).Magnitude2D();
             s_lastVehPos = g_playerPos;
 
-            bool nearGasStation = false;
-            for (const auto& gs : kGasStations) {
-                float dx = g_playerPos.x - gs.x;
-                float dy = g_playerPos.y - gs.y;
-                if (dx * dx + dy * dy < 20.0f * 20.0f) {
-                    nearGasStation = true;
-                    break;
-                }
-            }
-            if (nearGasStation && veh->m_vecMoveSpeed.Magnitude() < 0.05f) {
-                s_vehFuel = std::min(1.0f, s_vehFuel + dt * 0.25f);
-            } else if (g_config.useVehicleFuel) {
+            if (g_config.useVehicleFuel) {
                 bool onMission = CTheScripts::IsPlayerOnAMission();
                 if (!onMission || g_config.useVehicleFuelOnMission) {
                     s_vehFuel = std::max(0.0f, s_vehFuel - (dist / 150.0f) * 0.01f * g_config.vehicleFuelConsumption);
@@ -467,3 +455,189 @@ void Radar::UpdateInfoCards() {
     }
 }
 
+// -----------------------------------------------------------------------------
+// Gas pump services
+// -----------------------------------------------------------------------------
+// Replaces the old free auto-refill. Standing still next to a pump shows a
+// world-anchored "(KEY) Services" prompt; holding the key opens a two-row list
+// that refuels or repairs for money. Prices are never shown to the player.
+
+// HESOYAM also tops up the tank when CHEAT_REFILL_FUEL is on. Tailing the vanilla
+// cheat keeps money/armour/health behaving exactly as the game ships it.
+static void __cdecl Hooked_MoneyArmourHealthCheat() {
+    CCheat::MoneyArmourHealthCheat();
+    if (!g_config.cheatRefillFuel) return;
+
+    CPlayerPed* player = FindPlayerPed(0);
+    if (!player || !player->bInVehicle || !player->m_pVehicle) return;
+    CVehicle* veh = player->m_pVehicle;
+    if (!IsFuelVehicle(veh)) return;
+
+    s_vehicleFuelExt.Get(veh).fuelLevel = 1.0f;
+}
+
+// Renders a key code as the short name shown inside the "(KEY)" badge.
+static void KeyBadgeName(int vk, int pad, char* out, size_t outSize) {
+    if (pad != PADBTN_NONE) {
+        switch (pad) {
+            case PADBTN_A:          snprintf(out, outSize, "A");      return;
+            case PADBTN_B:          snprintf(out, outSize, "B");      return;
+            case PADBTN_X:          snprintf(out, outSize, "X");      return;
+            case PADBTN_Y:          snprintf(out, outSize, "Y");      return;
+            case PADBTN_LB:         snprintf(out, outSize, "LB");     return;
+            case PADBTN_LT:         snprintf(out, outSize, "LT");     return;
+            case PADBTN_RB:         snprintf(out, outSize, "RB");     return;
+            case PADBTN_RT:         snprintf(out, outSize, "RT");     return;
+            case PADBTN_START:      snprintf(out, outSize, "START");  return;
+            case PADBTN_BACK:       snprintf(out, outSize, "BACK");   return;
+            case PADBTN_DPAD_UP:    snprintf(out, outSize, "DUP");    return;
+            case PADBTN_DPAD_DOWN:  snprintf(out, outSize, "DDOWN");  return;
+            case PADBTN_DPAD_LEFT:  snprintf(out, outSize, "DLEFT");  return;
+            case PADBTN_DPAD_RIGHT: snprintf(out, outSize, "DRIGHT"); return;
+            default:                snprintf(out, outSize, "-");      return;
+        }
+    }
+    switch (vk) {
+        case VK_SPACE:  snprintf(out, outSize, "SPACE");  return;
+        case VK_RETURN: snprintf(out, outSize, "ENTER");  return;
+        case VK_UP:     snprintf(out, outSize, "UP");     return;
+        case VK_DOWN:   snprintf(out, outSize, "DOWN");   return;
+        case VK_ESCAPE: snprintf(out, outSize, "ESC");    return;
+        case VK_TAB:    snprintf(out, outSize, "TAB");    return;
+        default: break;
+    }
+    if (vk > 0 && vk < 0x80) snprintf(out, outSize, "%c", (char)vk);
+    else snprintf(out, outSize, "-");
+}
+
+// Resolves the price of a full refill. Tiers are 10% of tank, so a nearly empty
+// car pays ten units while a 95% full one pays one.
+static int RefuelPrice(const CVector& pumpPos, float currentFuel) {
+    float needed = (1.0f - currentFuel) * 100.0f;
+    if (needed <= 0.0f) return 0;
+    int units = (int)ceilf(needed / 10.0f);
+    bool isCountryside = (CTheZones::GetLevelFromPosition(&pumpPos) == LEVEL_NAME_COUNTRY_SIDE);
+    float price = (float)units * g_config.fuelBasePrice;
+    if (isCountryside) price *= g_config.fuelCsPriceMultiplier;
+    return (int)ceilf(price);
+}
+
+// Damage-scaled repair price, clamped to the configured range.
+static int RepairPrice(const CVehicle* veh) {
+    float t = Clampf((1000.0f - veh->m_fHealth) / 750.0f, 0.0f, 1.0f);
+    return (int)ceilf(Lerpf(g_config.repairPriceMin, g_config.repairPriceMax, t));
+}
+
+static bool s_servicePadDisabled = false;
+
+void Radar::UpdateFuelServices() {
+    CPlayerPed* player = FindPlayerPed(0);
+    if (!player) { s_serviceOpen = false; s_servicePromptAlpha = 0.0f; return; }
+
+    CVehicle* veh = GetStablePlayerVehicle(player);
+    bool eligible = g_config.useVehicleFuel && IsFuelVehicle(veh) && veh->m_pDriver == player;    bool wanted = player->m_pPlayerData && player->m_pPlayerData->m_pWanted
+                  && player->m_pPlayerData->m_pWanted->m_nWantedLevel > 0;
+
+    // Nearest pump within reach, and whether the car is actually parked there.
+    const GasStationPos* pump = nullptr;
+    if (eligible) {
+        float bestSq = 12.0f * 12.0f;
+        CVector pos = veh->GetPosition();
+        for (const auto& gs : kGasStations) {
+            float dx = pos.x - gs.x;
+            float dy = pos.y - gs.y;
+            float sq = dx * dx + dy * dy;
+            if (sq < bestSq) { bestSq = sq; pump = &gs; }
+        }
+    }
+
+    bool stopped = eligible && veh->m_vecMoveSpeed.Magnitude() < 0.05f;
+    bool canOpen = pump && stopped && !wanted;
+
+    // Pursuit gained mid-service, or the car left the pump: drop out and restore
+    // control immediately.
+    if (s_serviceOpen && (wanted || !eligible || !pump)) s_serviceOpen = false;
+
+    // Controls are only held while the menu is actually up. Doing this before the
+    // open/closed split guarantees the pad is released on every exit path.
+    if (!s_serviceOpen && s_servicePadDisabled) {
+        CPad::GetPad(0)->DisablePlayerControls = 0;
+        s_servicePadDisabled = false;
+    }
+
+    float dt = CTimer::ms_fTimeStep * 0.02f;
+    if (dt <= 0.0f || dt > 0.1f) dt = 0.0166f;
+
+    bool selectDown = (g_config.serviceSelectKey > 0 && (GetAsyncKeyState(g_config.serviceSelectKey) & 0x8000) != 0)
+                   || IsPadButtonDown(g_config.serviceSelectPad);
+    bool upDown     = (g_config.serviceUpKey > 0 && (GetAsyncKeyState(g_config.serviceUpKey) & 0x8000) != 0)
+                   || IsPadButtonDown(g_config.serviceUpPad);
+    bool downDown   = (g_config.serviceDownKey > 0 && (GetAsyncKeyState(g_config.serviceDownKey) & 0x8000) != 0)
+                   || IsPadButtonDown(g_config.serviceDownPad);
+    bool backDown   = (g_config.serviceBackKey > 0 && (GetAsyncKeyState(g_config.serviceBackKey) & 0x8000) != 0)
+                   || IsPadButtonDown(g_config.serviceBackPad);
+
+    if (!s_serviceOpen) {
+        if (canOpen) {
+            bool holdDown = (g_config.serviceKey > 0 && (GetAsyncKeyState(g_config.serviceKey) & 0x8000) != 0)
+                         || IsPadButtonDown(g_config.servicePad);
+            s_serviceAnchor = CVector(pump->x, pump->y, pump->z + 0.9f);
+            s_servicePromptAlpha = std::min(1.0f, s_servicePromptAlpha + dt * 6.0f);
+            if (holdDown) {
+                s_serviceHoldTime += dt;
+                if (s_serviceHoldTime >= 1.0f) {
+                    s_serviceOpen = true;
+                    s_serviceRow = SERVICE_ROW_REFUEL;
+                    s_serviceHoldTime = 0.0f;
+                    if (!s_servicePadDisabled) {
+                        CPad::GetPad(0)->DisablePlayerControls = 1;
+                        s_servicePadDisabled = true;
+                    }
+                }
+            } else {
+                s_serviceHoldTime = 0.0f;
+            }
+        } else {
+            s_servicePromptAlpha = std::max(0.0f, s_servicePromptAlpha - dt * 6.0f);
+            s_serviceHoldTime = 0.0f;
+        }
+        return;
+    }
+
+    // Menu is open: keep the prompt fully opaque and drive the list.
+    s_servicePromptAlpha = 1.0f;
+    if (upDown && !s_serviceLastUp)     s_serviceRow = (s_serviceRow + SERVICE_ROW_COUNT - 1) % SERVICE_ROW_COUNT;
+    if (downDown && !s_serviceLastDown) s_serviceRow = (s_serviceRow + 1) % SERVICE_ROW_COUNT;
+    s_serviceLastUp = upDown;
+    s_serviceLastDown = downDown;
+
+    if (backDown && !s_serviceLastBack) {
+        s_serviceOpen = false;
+    } else if (selectDown && !s_serviceLastSelect) {
+        VehicleFuelExt& ext = s_vehicleFuelExt.Get(veh);
+        if (s_serviceRow == SERVICE_ROW_REFUEL) {
+            int price = RefuelPrice(CVector(pump->x, pump->y, pump->z), ext.fuelLevel);
+            if (price > 0 && CWorld::Players[0].m_nMoney >= price) {
+                CWorld::Players[0].m_nMoney -= price;
+                s_vehFuel = 1.0f;
+                ext.fuelLevel = 1.0f;
+                LogWrite("fuel: refuelled for $%d", price);
+            }
+        } else {
+            int price = RepairPrice(veh);
+            bool damaged = veh->m_fHealth < 995.0f;
+            if (damaged && CWorld::Players[0].m_nMoney >= price) {
+                CWorld::Players[0].m_nMoney -= price;
+                veh->Fix();
+                LogWrite("fuel: repaired for $%d", price);
+            }
+        }
+    }
+    s_serviceLastSelect = selectDown;
+    s_serviceLastBack = backDown;
+
+    if (!s_serviceOpen && s_servicePadDisabled) {
+        CPad::GetPad(0)->DisablePlayerControls = 0;
+        s_servicePadDisabled = false;
+    }
+}

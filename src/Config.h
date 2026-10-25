@@ -165,7 +165,24 @@ struct Config {
     bool   useVehicleFuelOnMission  = false;                 // USE_VEHICLE_FUEL_ON_MISSION (1 = on, 0 = off)
     float  vehicleFuelConsumption   = 1.0f;                  // VEHICLE_FUEL_CONSUMPTION rate multiplier (1.0 = default)
     float  vehicleFuelRngMin        = 0.15f;                 // VEHICLE_FUEL_RNG_MIN (15%)
-    float  vehicleFuelRngMax        = 0.80f;                 // VEHICLE_FUEL_RNG_MAX (80%)
+    float  vehicleFuelRngMax        = 1.00f;                 // VEHICLE_FUEL_RNG_MAX (100%)
+    float  fuelBasePrice            = 1.50f;                 // BASE_PRICE: cost per 10% of tank
+    float  fuelCsPriceMultiplier    = 1.50f;                 // FUEL_CS_PRICE_MULTIPLIER: countryside surcharge
+    float  repairPriceMin           = 10.0f;                 // REPAIR_PRICE_MIN: cost at no damage
+    float  repairPriceMax           = 400.0f;                // REPAIR_PRICE_MAX: cost at full damage
+    bool   cheatRefillFuel          = false;                 // CHEAT_REFILL_FUEL: HESOYAM also fills the tank
+
+    // [KEYS] Gas pump services menu
+    int    serviceKey               = ' ';                   // SERVICE_KEY: hold near a pump to open
+    int    servicePad               = PADBTN_LB;             // SERVICE_PAD
+    int    serviceSelectKey         = VK_RETURN;             // SERVICE_SELECT_KEY
+    int    serviceSelectPad         = PADBTN_A;              // SERVICE_SELECT_PAD
+    int    serviceBackKey           = 'F';                   // SERVICE_BACK_KEY
+    int    serviceBackPad           = PADBTN_Y;              // SERVICE_BACK_PAD
+    int    serviceUpKey             = VK_UP;                 // SERVICE_UP_KEY
+    int    serviceUpPad             = PADBTN_DPAD_UP;        // SERVICE_UP_PAD
+    int    serviceDownKey           = VK_DOWN;               // SERVICE_DOWN_KEY
+    int    serviceDownPad           = PADBTN_DPAD_DOWN;      // SERVICE_DOWN_PAD
     int    infoHotkey               = 'J';                   // [KEYS] INFO_KEY keyboard hotkey to show/refresh info cards on demand
     int    infoPad                  = PADBTN_NONE;           // [KEYS] INFO_KEY_PAD gamepad button for the info-card refresh
     CRGBA  cardBackdropColor        = {  53,  49,  64, 230 }; // #353140 minimap.card.background

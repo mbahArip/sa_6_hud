@@ -81,6 +81,7 @@ namespace hud6 {
 #include "ext/heat/RadarHeatTracking.inc"
 #include "ui/wanted/RadarWantedSearch.inc"
 #include "ui/cards/RadarInfoCardsUpdate.inc"
+#include "ui/cards/RadarRenderFuelServices.inc"
 #include "ui/radar/RadarProcess.inc"
 #include "ui/radar/RadarRenderMap.inc"
 #include "ui/wanted/RadarRenderWanted.inc"

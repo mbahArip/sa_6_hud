@@ -64,6 +64,7 @@ void Radar::Process() {
     if (g_config.enableGps)                GuardedRun(UpdateGps, "process.gps");
     if (g_config.enableWantedSearchRadius) GuardedRun(UpdateWantedSearch, "process.wanted");
     if (g_config.showInfoCards)            GuardedRun(UpdateInfoCards, "process.cards");
+    GuardedRun(UpdateFuelServices, "process.fuel");
     GuardedRun(WriteDebugLog, "process.debug");
 
     if (g_config.enabled) {

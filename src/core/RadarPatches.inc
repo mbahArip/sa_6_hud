@@ -12,6 +12,7 @@ enum ePatchModule {
     PATCHMOD_GPS_ENGINE = 0,
     PATCHMOD_NITRO,
     PATCHMOD_WANTED_STARS,
+    PATCHMOD_CHEAT_REFUEL,
     PATCHMOD_COUNT
 };
 
@@ -201,6 +202,13 @@ static void ApplyNitroPatches() {
 }
 
 static void ApplyWantedPatches();   // defined in ui/wanted/RadarWanted.inc
+
+// HESOYAM also tops up the tank, when CHEAT_REFILL_FUEL is enabled. Tailing the
+// vanilla cheat rather than reimplementing it keeps the money/armour/health
+// behaviour exactly as the game ships it. Defined in the fuel unit, which owns
+// the per-vehicle fuel storage.
+static void __cdecl Hooked_MoneyArmourHealthCheat();
+
 static void SyncModulePatchesImpl() {
     const bool nitroWanted = g_config.enableControllableNitro;
     if (nitroWanted && !s_moduleActive[PATCHMOD_NITRO]) {
@@ -214,6 +222,16 @@ static void SyncModulePatchesImpl() {
         ApplyWantedPatches();
     } else if (!wantedStarsWanted && s_moduleActive[PATCHMOD_WANTED_STARS]) {
         RestoreModulePatches(PATCHMOD_WANTED_STARS);
+    }
+
+    const bool cheatRefillWanted = g_config.cheatRefillFuel;
+    if (cheatRefillWanted && !s_moduleActive[PATCHMOD_CHEAT_REFUEL]) {
+        s_moduleActive[PATCHMOD_CHEAT_REFUEL] = true;
+        SnapshotPatch((void*)0x438E40, 5, PATCHMOD_CHEAT_REFUEL);
+        plugin::patch::RedirectJump(0x438E40, Hooked_MoneyArmourHealthCheat);
+        LogWrite("fuel: HESOYAM refuel hook installed at 0x438E40");
+    } else if (!cheatRefillWanted && s_moduleActive[PATCHMOD_CHEAT_REFUEL]) {
+        RestoreModulePatches(PATCHMOD_CHEAT_REFUEL);
     }
 
     // The GPS pathfinder buffer swap is restart-only, so it is applied once and

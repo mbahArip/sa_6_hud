@@ -28,6 +28,7 @@ void Radar::DrawOverlay() {
         if (g_config.showInfoCards) {
             DrawInfoCards(g_radarRect, 0.0f);
         }
+        DrawFuelServices();
         return;
     }
 
@@ -35,6 +36,7 @@ void Radar::DrawOverlay() {
         DrawInfoCards(g_radarRect, alpha);
     }
 
+    DrawFuelServices();
     IDirect3DDevice9* dev = (IDirect3DDevice9*)RwD3D9GetCurrentD3DDevice();
     RECT sc = { (LONG)g_radarRect.left, (LONG)g_radarRect.top, (LONG)g_radarRect.right, (LONG)g_radarRect.bottom };
     D3DRECT d3dRect = { (LONG)g_radarRect.left, (LONG)g_radarRect.top, (LONG)g_radarRect.right, (LONG)g_radarRect.bottom };

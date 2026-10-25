@@ -66,6 +66,23 @@ static float s_vehFuel           = 1.0f;
 static CVector s_lastVehPos(0.0f, 0.0f, 0.0f);
 static CVehicle* s_pTrackedFuelVehicle = nullptr;
 
+// Gas pump services menu state.
+enum eServiceRow {
+    SERVICE_ROW_REFUEL = 0,
+    SERVICE_ROW_REPAIR,
+    SERVICE_ROW_COUNT
+};
+
+static bool     s_serviceOpen        = false;
+static int      s_serviceRow         = SERVICE_ROW_REFUEL;
+static float    s_serviceHoldTime    = 0.0f;
+static float    s_servicePromptAlpha = 0.0f;
+static CVector  s_serviceAnchor(0.0f, 0.0f, 0.0f);
+static bool     s_serviceLastSelect  = false;
+static bool     s_serviceLastUp      = false;
+static bool     s_serviceLastDown    = false;
+static bool     s_serviceLastBack    = false;
+
 struct VehicleFuelExt {
     float fuelLevel = -1.0f;
     bool initialized = false;
@@ -111,6 +128,22 @@ static CRGBA s_radarSeaColor(56, 73, 80, 255);
 
 static float Clampf(float v, float lo, float hi) { return v < lo ? lo : (v > hi ? hi : v); }
 static float Lerpf(float a, float b, float t)    { return a + (b - a) * t; }
+
+// Vehicles that carry a fuel tank: anything ground-bound with an engine. Bicycles
+// (BMX class plus the three cycle models) and trailers are excluded, as are boats,
+// aircraft and trains.
+static bool IsFuelVehicle(const CVehicle* veh) {
+    if (!veh) return false;
+    switch (veh->m_nVehicleSubClass) {
+        case VEHICLE_AUTOMOBILE:
+        case VEHICLE_MTRUCK:
+        case VEHICLE_QUAD:
+        case VEHICLE_BIKE:
+            return veh->m_nModelIndex != 481 && veh->m_nModelIndex != 509 && veh->m_nModelIndex != 510;
+        default:
+            return false;
+    }
+}
 static inline CVector LerpVec(const CVector& a, const CVector& b, float t) { return a + (b - a) * t; }
 
 static inline unsigned char ModAlpha(unsigned char origAlpha, float mult) {

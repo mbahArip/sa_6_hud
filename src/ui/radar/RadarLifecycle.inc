@@ -236,6 +236,11 @@ void Radar::Init() {
     // Installs only the hooks whose module is enabled in the config. Modules the
     // user disabled are never patched, so they cost nothing at runtime.
     SyncModulePatches();
+
+    // rand() is used for the starting fuel level; without a seed every boot gives
+    // the same tanks.
+    srand(GetTickCount());
+
     g_radarDead = false;
     g_warmupFrames = 0;
     for (int i = 0; i < (int)HudModuleId::Count; ++i) {

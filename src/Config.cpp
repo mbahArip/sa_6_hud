@@ -206,6 +206,20 @@ static int ParseKeyBind(const std::string& raw) {
     std::string upper;
     for (char c : s) upper += (char)toupper((unsigned char)c);
 
+    // Bare names for the keys a bind is most likely to use, so the INI reads
+    // naturally without the VK_ prefix.
+    static const struct { const char* name; int vk; } kBareNames[] = {
+        { "SPACE", VK_SPACE }, { "ENTER", VK_RETURN }, { "RETURN", VK_RETURN },
+        { "ESC", VK_ESCAPE }, { "ESCAPE", VK_ESCAPE }, { "TAB", VK_TAB },
+        { "UP", VK_UP }, { "DOWN", VK_DOWN }, { "LEFT", VK_LEFT }, { "RIGHT", VK_RIGHT },
+        { "SHIFT", VK_SHIFT }, { "CTRL", VK_CONTROL }, { "ALT", VK_MENU },
+        { "BACKSPACE", VK_BACK }, { "INSERT", VK_INSERT }, { "DELETE", VK_DELETE },
+        { "HOME", VK_HOME }, { "END", VK_END }, { "PAGEUP", VK_PRIOR }, { "PAGEDOWN", VK_NEXT },
+    };
+    for (const auto& entry : kBareNames) {
+        if (upper == entry.name) return entry.vk;
+    }
+
     if (upper.compare(0, 3, "VK_") == 0) {
         static const struct { const char* name; int vk; } kVkNames[] = {
             { "VK_ESCAPE", VK_ESCAPE }, { "VK_TAB", VK_TAB }, { "VK_SPACE", VK_SPACE },
@@ -298,11 +312,32 @@ static const char* PadBindToName(int mask) {
 }
 
 // Renders a key bind back to the INI. Single printable characters stay literal;
-// everything else becomes a 0x hex code so it round-trips exactly.
+// named keys use their bare name so the file round-trips through ParseKeyBind.
 static void KeyBindToString(int vk, char* out, size_t outSize) {
     if (vk <= 0) {
-        snprintf(out, outSize, "");
+        snprintf(out, outSize, "NONE");
         return;
+    }
+    switch (vk) {
+        case VK_SPACE:   snprintf(out, outSize, "SPACE");   return;
+        case VK_RETURN:  snprintf(out, outSize, "ENTER");   return;
+        case VK_ESCAPE:  snprintf(out, outSize, "ESC");     return;
+        case VK_TAB:     snprintf(out, outSize, "TAB");     return;
+        case VK_UP:      snprintf(out, outSize, "UP");      return;
+        case VK_DOWN:    snprintf(out, outSize, "DOWN");    return;
+        case VK_LEFT:    snprintf(out, outSize, "LEFT");    return;
+        case VK_RIGHT:   snprintf(out, outSize, "RIGHT");   return;
+        case VK_SHIFT:   snprintf(out, outSize, "SHIFT");   return;
+        case VK_CONTROL: snprintf(out, outSize, "CTRL");    return;
+        case VK_MENU:    snprintf(out, outSize, "ALT");     return;
+        case VK_BACK:    snprintf(out, outSize, "BACKSPACE"); return;
+        case VK_INSERT:  snprintf(out, outSize, "INSERT");  return;
+        case VK_DELETE:  snprintf(out, outSize, "DELETE");  return;
+        case VK_HOME:    snprintf(out, outSize, "HOME");    return;
+        case VK_END:     snprintf(out, outSize, "END");     return;
+        case VK_PRIOR:   snprintf(out, outSize, "PAGEUP");  return;
+        case VK_NEXT:    snprintf(out, outSize, "PAGEDOWN"); return;
+        default: break;
     }
     if (vk >= 0x20 && vk < 0x7F) {
         snprintf(out, outSize, "%c", (char)vk);
@@ -658,7 +693,31 @@ void LoadConfig() {
     g_config.vehicleFuelRngMin   = readFloat("Minimap.Extension.VehicleFuel", "VEHICLE_FUEL_RNG_MIN",
         readFloat("Minimap.Vehicle", "VEHICLE_FUEL_RNG_MIN", readFloat("info_cards", "vehicle_fuel_rng_min", 0.15f)));
     g_config.vehicleFuelRngMax   = readFloat("Minimap.Extension.VehicleFuel", "VEHICLE_FUEL_RNG_MAX",
-        readFloat("Minimap.Vehicle", "VEHICLE_FUEL_RNG_MAX", readFloat("info_cards", "vehicle_fuel_rng_max", 0.80f)));
+        readFloat("Minimap.Vehicle", "VEHICLE_FUEL_RNG_MAX", readFloat("info_cards", "vehicle_fuel_rng_max", 1.00f)));
+
+    g_config.fuelBasePrice         = readFloat("Minimap.Extension.VehicleFuel", "BASE_PRICE", 1.50f);
+    g_config.fuelCsPriceMultiplier = readFloat("Minimap.Extension.VehicleFuel", "FUEL_CS_PRICE_MULTIPLIER", 1.50f);
+    g_config.repairPriceMin        = readFloat("Minimap.Extension.VehicleFuel", "REPAIR_PRICE_MIN", 10.0f);
+    g_config.repairPriceMax        = readFloat("Minimap.Extension.VehicleFuel", "REPAIR_PRICE_MAX", 400.0f);
+    g_config.cheatRefillFuel       = readInt("Minimap.Extension.VehicleFuel", "CHEAT_REFILL_FUEL", 0) != 0;
+
+    // [KEYS] Gas pump services menu. An empty value falls back to the defaults in
+    // Config.h, which mirror the vanilla garage keys (SPACE select, F/ENTER back).
+    g_config.serviceKey       = ParseKeyBind(readStr("KEYS", "SERVICE_KEY", " "));
+    if (g_config.serviceKey == 0) g_config.serviceKey = ' ';
+    g_config.servicePad       = ParsePadBind(readStr("KEYS", "SERVICE_PAD", "LB"));
+    g_config.serviceSelectKey = ParseKeyBind(readStr("KEYS", "SERVICE_SELECT_KEY", "VK_RETURN"));
+    if (g_config.serviceSelectKey == 0) g_config.serviceSelectKey = VK_RETURN;
+    g_config.serviceSelectPad = ParsePadBind(readStr("KEYS", "SERVICE_SELECT_PAD", "A"));
+    g_config.serviceBackKey   = ParseKeyBind(readStr("KEYS", "SERVICE_BACK_KEY", "F"));
+    if (g_config.serviceBackKey == 0) g_config.serviceBackKey = 'F';
+    g_config.serviceBackPad   = ParsePadBind(readStr("KEYS", "SERVICE_BACK_PAD", "Y"));
+    g_config.serviceUpKey     = ParseKeyBind(readStr("KEYS", "SERVICE_UP_KEY", "VK_UP"));
+    if (g_config.serviceUpKey == 0) g_config.serviceUpKey = VK_UP;
+    g_config.serviceUpPad     = ParsePadBind(readStr("KEYS", "SERVICE_UP_PAD", "DUP"));
+    g_config.serviceDownKey   = ParseKeyBind(readStr("KEYS", "SERVICE_DOWN_KEY", "VK_DOWN"));
+    if (g_config.serviceDownKey == 0) g_config.serviceDownKey = VK_DOWN;
+    g_config.serviceDownPad   = ParsePadBind(readStr("KEYS", "SERVICE_DOWN_PAD", "DDOWN"));
 
     g_config.infoHotkey = ParseKeyBind(readStr("KEYS", "INFO_KEY", readStr("info_cards", "info_hotkey", "J").c_str()));
     if (g_config.infoHotkey == 0) g_config.infoHotkey = 'J';
@@ -1068,6 +1127,21 @@ void SaveConfig() {
     KeyBindToString(g_config.infoHotkey, keyBuf, sizeof(keyBuf));
     writeStr("KEYS", "INFO_KEY", keyBuf);
     writeStr("KEYS", "INFO_KEY_PAD", PadBindToName(g_config.infoPad));
+    KeyBindToString(g_config.serviceKey, keyBuf, sizeof(keyBuf));
+    writeStr("KEYS", "SERVICE_KEY", keyBuf);
+    writeStr("KEYS", "SERVICE_PAD", PadBindToName(g_config.servicePad));
+    KeyBindToString(g_config.serviceSelectKey, keyBuf, sizeof(keyBuf));
+    writeStr("KEYS", "SERVICE_SELECT_KEY", keyBuf);
+    writeStr("KEYS", "SERVICE_SELECT_PAD", PadBindToName(g_config.serviceSelectPad));
+    KeyBindToString(g_config.serviceBackKey, keyBuf, sizeof(keyBuf));
+    writeStr("KEYS", "SERVICE_BACK_KEY", keyBuf);
+    writeStr("KEYS", "SERVICE_BACK_PAD", PadBindToName(g_config.serviceBackPad));
+    KeyBindToString(g_config.serviceUpKey, keyBuf, sizeof(keyBuf));
+    writeStr("KEYS", "SERVICE_UP_KEY", keyBuf);
+    writeStr("KEYS", "SERVICE_UP_PAD", PadBindToName(g_config.serviceUpPad));
+    KeyBindToString(g_config.serviceDownKey, keyBuf, sizeof(keyBuf));
+    writeStr("KEYS", "SERVICE_DOWN_KEY", keyBuf);
+    writeStr("KEYS", "SERVICE_DOWN_PAD", PadBindToName(g_config.serviceDownPad));
 
     // [UI] Master toggles per HUD surface
     writeInt("UI", "USE_RADAR",        g_config.enabled ? 1 : 0);
@@ -1150,6 +1224,11 @@ void SaveConfig() {
     writeFloat("Minimap.Extension.VehicleFuel", "VEHICLE_FUEL_CONSUMPTION", g_config.vehicleFuelConsumption, "%.2f");
     writeFloat("Minimap.Extension.VehicleFuel", "VEHICLE_FUEL_RNG_MIN", g_config.vehicleFuelRngMin, "%.2f");
     writeFloat("Minimap.Extension.VehicleFuel", "VEHICLE_FUEL_RNG_MAX", g_config.vehicleFuelRngMax, "%.2f");
+    writeFloat("Minimap.Extension.VehicleFuel", "BASE_PRICE", g_config.fuelBasePrice, "%.2f");
+    writeFloat("Minimap.Extension.VehicleFuel", "FUEL_CS_PRICE_MULTIPLIER", g_config.fuelCsPriceMultiplier, "%.2f");
+    writeFloat("Minimap.Extension.VehicleFuel", "REPAIR_PRICE_MIN", g_config.repairPriceMin, "%.2f");
+    writeFloat("Minimap.Extension.VehicleFuel", "REPAIR_PRICE_MAX", g_config.repairPriceMax, "%.2f");
+    writeInt("Minimap.Extension.VehicleFuel", "CHEAT_REFILL_FUEL", g_config.cheatRefillFuel ? 1 : 0);
 
     // [Wanted.Visual]
     writeInt("Wanted.Visual", "USE_WANTED_STAR", g_config.useWantedStar ? 1 : 0);

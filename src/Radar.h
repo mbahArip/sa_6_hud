@@ -30,6 +30,8 @@ private:
     static void UpdateGps();
     static void UpdateWantedSearch();
     static void UpdateInfoCards();
+    static void UpdateFuelServices();
+    static void DrawFuelServices();
     static void DrawOverlay();
 
     static void DrawBackdrop(const CRect& rect, float alpha);
