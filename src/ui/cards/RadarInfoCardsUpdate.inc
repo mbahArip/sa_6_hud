@@ -533,32 +533,71 @@ static int RepairPrice(const CVehicle* veh) {
 
 static bool s_servicePadDisabled = false;
 
-// Locks the player out of every input the services list could swallow. Enter/exit
-// vehicle is the one that matters most: without it, pressing the confirm key
-// ejects the player mid-purchase.
+// Locks the player out of every input the services list could swallow.
+//
+// DisablePlayerControls alone is not enough: it is a 9-bit flag union, and the
+// individual bDisablePlayer* fields cover buttons but not analog driving. Throttle,
+// steering and braking are read straight from CPad::NewState into the vehicle, so
+// the vehicle state is zeroed separately every frame by FreezeServiceVehicle().
 static void SetServiceInputLock(bool locked) {
     CPad* pad = CPad::GetPad(0);
     if (!pad) return;
     if (locked) {
-        pad->DisablePlayerControls     = 1;
         pad->bDisablePlayerEnterCar    = 1;
         pad->bDisablePlayerJump        = 1;
         pad->bDisablePlayerDuck        = 1;
         pad->bDisablePlayerFireWeapon  = 1;
         pad->bDisablePlayerCycleWeapon = 1;
-        // Freeze the camera on the pump instead of letting it orbit or snap.
-        s_servicePrevPersist = TheCamera.m_bCameraPersistPosition;
-        TheCamera.m_bCameraPersistPosition = true;
-        TheCamera.LerpFOV(0.75f, 1.0f, 0.4f, true);
+
+        // Zoom in slightly for the duration of the list. The active cam's FOV is
+        // driven directly; LerpFOV fights the camera's own FOV processing and
+        // m_bCameraPersistPosition is a cutscene flag that glitches gameplay cams.
+        s_servicePrevFov = TheCamera.m_aCams[TheCamera.m_nActiveCam].m_fFOV;
+        s_serviceFovLocked = true;
     } else {
-        pad->DisablePlayerControls     = 0;
         pad->bDisablePlayerEnterCar    = 0;
         pad->bDisablePlayerJump        = 0;
         pad->bDisablePlayerDuck        = 0;
         pad->bDisablePlayerFireWeapon  = 0;
         pad->bDisablePlayerCycleWeapon = 0;
-        TheCamera.m_bCameraPersistPosition = s_servicePrevPersist;
-        TheCamera.LerpFOV(1.0f, 1.0f, 0.4f, true);
+
+        if (s_serviceFovLocked) {
+            TheCamera.m_aCams[TheCamera.m_nActiveCam].m_fFOV = s_servicePrevFov;
+            s_serviceFovLocked = false;
+        }
+    }
+}
+
+// Holds the vehicle still while the list is open.
+//
+// Zeroing the vehicle fields alone is not enough: gameProcessEvent fires after the
+// game logic for the frame, so physics has already consumed that frame's input.
+// Clearing CPad::NewState is what actually stops it, because the next frame's
+// vehicle processing reads zeroes. The vehicle fields are cleared as well so the
+// car cannot coast on momentum.
+static void FreezeServiceVehicle(CVehicle* veh) {
+    CPad* pad = CPad::GetPad(0);
+    if (pad) {
+        CControllerState& s = pad->NewState;
+        s.LeftStickX  = 0;
+        s.LeftStickY  = 0;
+        s.ButtonCross = 0;    // accelerate / sprint
+        s.ButtonSquare = 0;   // brake / reverse
+        s.RightShoulder1 = 0; // handbrake
+        s.ButtonCircle = 0;   // fire
+        s.ButtonTriangle = 0; // enter / exit
+    }
+
+    if (!veh) return;
+    veh->m_fGasPedal      = 0.0f;
+    veh->m_fBreakPedal    = 1.0f;
+    veh->m_fSteerAngle    = 0.0f;
+    veh->m_f2ndSteerAngle = 0.0f;
+    veh->m_vecMoveSpeed   = CVector(0.0f, 0.0f, 0.0f);
+    veh->m_vecTurnSpeed   = CVector(0.0f, 0.0f, 0.0f);
+
+    if (s_serviceFovLocked) {
+        TheCamera.m_aCams[TheCamera.m_nActiveCam].m_fFOV = s_servicePrevFov * 0.78f;
     }
 }
 
@@ -655,11 +694,15 @@ void Radar::UpdateFuelServices() {
                    || IsPadButtonDown(g_config.serviceDownPad);
     bool backDown   = (g_config.serviceBackKey > 0 && (GetAsyncKeyState(g_config.serviceBackKey) & 0x8000) != 0)
                    || IsPadButtonDown(g_config.serviceBackPad);
+    bool holdDown   = (g_config.serviceKey > 0 && (GetAsyncKeyState(g_config.serviceKey) & 0x8000) != 0)
+                   || IsPadButtonDown(g_config.servicePad);
+
+    // Freeze only after the pad has been sampled above, otherwise clearing
+    // CPad::NewState would also swallow the menu's own navigation input.
+    if (s_serviceOpen) FreezeServiceVehicle(veh);
 
     if (!s_serviceOpen) {
         if (canOpen) {
-            bool holdDown = (g_config.serviceKey > 0 && (GetAsyncKeyState(g_config.serviceKey) & 0x8000) != 0)
-                         || IsPadButtonDown(g_config.servicePad);
             s_serviceAnchor = CVector(pump->x, pump->y, pump->z + 0.9f);
             s_servicePromptAlpha = std::min(1.0f, s_servicePromptAlpha + dt * 6.0f);
             if (holdDown) {

@@ -23,11 +23,25 @@ bool ProjectAnchor(const CVector& worldPos, float& outX, float& outY) {
 
 // Circular key badge: a filled disc with a track ring, the key name centred
 // inside. Mirrors the telemetry gauge look at roughly 1.8x the radius.
-void DrawKeyBadge(float cx, float cy, float radius, const char* badge, CRGBA ringCol, CRGBA fillCol, CRGBA textCol) {
+// `progress` fills the ring from 12 o'clock clockwise, 0..1.
+void DrawKeyBadge(float cx, float cy, float radius, const char* badge,
+                  CRGBA ringCol, CRGBA fillCol, CRGBA textCol, float progress) {
     const float trackW = radius * 0.16f;
 
     DrawCircle(cx, cy, radius, fillCol, 48);
+
+    // Track ring, then the filled portion on top of it.
     DrawArcStrip(cx, cy, radius - trackW, radius, 0.0f, 2.0f * kPi, ringCol, 48);
+
+    if (progress > 0.001f) {
+        const float startAngle = -kPi * 0.5f;
+        const float endAngle   = startAngle + (2.0f * kPi * Clampf(progress, 0.0f, 1.0f));
+        DrawArcStrip(cx, cy, radius - trackW, radius, startAngle, endAngle, textCol, 48);
+
+        // Round cap so the leading edge matches the telemetry gauges.
+        const float midRad = radius - trackW * 0.5f;
+        DrawCircle(cx + midRad * cosf(endAngle), cy + midRad * sinf(endAngle), trackW * 0.5f, textCol, 24);
+    }
 
     // Shrink the label to fit inside the disc.
     float fontScale = radius * 0.055f;
@@ -45,11 +59,12 @@ void DrawKeyBadge(float cx, float cy, float radius, const char* badge, CRGBA rin
 // Draws a full row: badge disc, then the label to its right. Returns the row's
 // total width so callers can centre the block.
 float DrawServiceRow(float leftX, float centerY, float radius, const char* badge,
-                     const char* label, CRGBA ringCol, CRGBA fillCol, CRGBA textCol) {
+                     const char* label, CRGBA ringCol, CRGBA fillCol, CRGBA textCol,
+                     float progress) {
     const float sH = ScreenH();
     const float scale = sH / 720.0f;
 
-    DrawKeyBadge(leftX + radius, centerY, radius, badge, ringCol, fillCol, textCol);
+    DrawKeyBadge(leftX + radius, centerY, radius, badge, ringCol, fillCol, textCol, progress);
 
     float labelScale = 0.62f * scale;
     CFont::SetFontStyle(FONT_MENU);
@@ -109,7 +124,8 @@ void Radar::DrawFuelServices() {
 
         float radius = 20.0f * scale;
         float totalW = MeasureServiceRow(radius, "Services");
-        DrawServiceRow(sx - totalW * 0.5f, sy, radius, badge, "Services", trackCol, discBg, textCol);
+        float holdProgress = Clampf(s_serviceHoldTime, 0.0f, 1.0f);
+        DrawServiceRow(sx - totalW * 0.5f, sy, radius, badge, "Services", trackCol, discBg, textCol, holdProgress);
         return;
     }
 
@@ -145,7 +161,7 @@ void Radar::DrawFuelServices() {
 
         float totalW = MeasureServiceRow(radius, rows[i].label);
         DrawServiceRow(sx - totalW * 0.5f, rowY, radius, rows[i].badge, rows[i].label,
-                       ring, discBg, col);
+                       ring, discBg, col, 0.0f);
         rowY += rowH;
     }
 
@@ -156,5 +172,5 @@ void Radar::DrawFuelServices() {
     float backRadius = 16.0f * scale;
     float backW = MeasureServiceRow(backRadius, "Back");
     DrawServiceRow(ScreenW() - backW - 40.0f * scale, ScreenH() - 60.0f * scale,
-                   backRadius, backBadge, "Back", trackCol, discBg, textCol);
+                   backRadius, backBadge, "Back", trackCol, discBg, textCol, 0.0f);
 }
