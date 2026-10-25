@@ -479,8 +479,10 @@ static void __cdecl Hooked_MoneyArmourHealthCheat() {
 }
 
 // Renders a key code as the short name shown inside the "(KEY)" badge.
-static void KeyBadgeName(int vk, int pad, char* out, size_t outSize) {
-    if (pad != PADBTN_NONE) {
+// `usePad` picks the gamepad name when the player last touched the controller, so
+// the prompt matches whichever device is actually in their hands.
+static void KeyBadgeName(int vk, int pad, bool usePad, char* out, size_t outSize) {
+    if (usePad && pad != PADBTN_NONE) {
         switch (pad) {
             case PADBTN_A:          snprintf(out, outSize, "A");      return;
             case PADBTN_B:          snprintf(out, outSize, "B");      return;
@@ -545,45 +547,86 @@ static bool s_servicePadDisabled = false;
 // pad state being cleared underneath them.
 static const unsigned short kServiceControlBits = 0x0084; // bit 2 + bit 7
 
-static void SetServiceInputLock(bool locked) {
+// Re-asserted every frame, not just on open. San Andreas resets the transition
+// flags during its own control pass, so a one-shot write gets wiped and the game
+// starts reading input again mid-menu.
+static void HoldServiceControlBits() {
     CPad* pad = CPad::GetPad(0);
     if (!pad) return;
-    if (locked) {
-        pad->DisablePlayerControls    |= kServiceControlBits;
-        pad->bDisablePlayerEnterCar    = 1;
-        pad->bDisablePlayerJump        = 1;
-        pad->bDisablePlayerDuck        = 1;
-        pad->bDisablePlayerFireWeapon  = 1;
-        pad->bDisablePlayerCycleWeapon = 1;
+    pad->DisablePlayerControls    |= kServiceControlBits;
+    pad->bDisablePlayerEnterCar    = 1;
+    pad->bDisablePlayerJump        = 1;
+    pad->bDisablePlayerDuck        = 1;
+    pad->bDisablePlayerFireWeapon  = 1;
+    pad->bDisablePlayerCycleWeapon = 1;
+}
 
-        // Freeze the rendered camera. The matrix is what the renderer actually
-        // consumes, and gameProcessEvent runs after CCamera::Process, so a write
-        // here survives until the next frame's camera pass.
-        s_servicePrevCamMatrix = TheCamera.m_mCameraMatrix;
-        s_serviceCamLocked = true;
-    } else {
-        pad->DisablePlayerControls    &= (unsigned short)~kServiceControlBits;
-        pad->bDisablePlayerEnterCar    = 0;
-        pad->bDisablePlayerJump        = 0;
-        pad->bDisablePlayerDuck        = 0;
-        pad->bDisablePlayerFireWeapon  = 0;
-        pad->bDisablePlayerCycleWeapon = 0;
-        s_serviceCamLocked = false;
+static void ReleaseServiceControlBits() {
+    CPad* pad = CPad::GetPad(0);
+    if (!pad) return;
+    pad->DisablePlayerControls    &= (unsigned short)~kServiceControlBits;
+    pad->bDisablePlayerEnterCar    = 0;
+    pad->bDisablePlayerJump        = 0;
+    pad->bDisablePlayerDuck        = 0;
+    pad->bDisablePlayerFireWeapon  = 0;
+    pad->bDisablePlayerCycleWeapon = 0;
+}
+
+// Builds the dolly target: a camera parked behind the car looking at the pump.
+static void BeginServiceCamera(const CVector& vehPos, const CVector& pumpPos) {
+    s_serviceStartCamMatrix = TheCamera.m_mCameraMatrix;
+
+    // Stand off behind the car, on the far side from the pump, and slightly above.
+    CVector toPump = pumpPos - vehPos;
+    toPump.z = 0.0f;
+    if (toPump.Magnitude2D() < 0.01f) toPump = CVector(0.0f, 1.0f, 0.0f);
+    toPump = toPump.Normalized();
+
+    s_serviceCamFromPos = s_serviceStartCamMatrix.GetPosition();
+    s_serviceCamToPos   = vehPos - toPump * 5.5f + CVector(0.0f, 0.0f, 2.2f);
+    s_serviceCamLookAt  = pumpPos + CVector(0.0f, 0.0f, 0.8f);
+    s_serviceCamBlend   = 0.0f;
+    s_serviceCamLocked  = true;
+}
+
+// Writes the blended camera transform. Called after CCamera::Process has run, so
+// the value survives to render.
+static void UpdateServiceCamera(float dt) {
+    if (!s_serviceCamLocked) return;
+
+    if (s_serviceCamBlend < 1.0f) {
+        s_serviceCamBlend = std::min(1.0f, s_serviceCamBlend + dt / kServiceCamBlendSeconds);
     }
+    // Ease-out cubic so the dolly settles instead of stopping dead.
+    float inv = 1.0f - s_serviceCamBlend;
+    float t = 1.0f - inv * inv * inv;
+
+    CMatrix& cam = TheCamera.m_mCameraMatrix;
+    cam.pos = LerpVec(s_serviceCamFromPos, s_serviceCamToPos, t);
+
+    CVector at = s_serviceCamLookAt - cam.pos;
+    if (at.Magnitude() < 0.01f) at = CVector(0.0f, 1.0f, 0.0f);
+    at = at.Normalized();
+
+    // RW basis: right = at x worldUp, up = right x at. The SDK's GetUp()/GetForward()
+    // accessors are swapped relative to these members, so write them directly.
+    CVector right = at.Cross(CVector(0.0f, 0.0f, 1.0f));
+    if (right.Magnitude() < 0.01f) right = CVector(1.0f, 0.0f, 0.0f);
+    right = right.Normalized();
+
+    cam.right = right;
+    cam.up    = right.Cross(at).Normalized();
+    cam.at    = at;
 }
 
 // Holds the whole game still while the list is open.
 //
-// DisablePlayerControls is a 9-bit flag union, not a master switch, so it was
-// never doing anything. Instead the entire input state is zeroed every frame after
-// the menu has sampled its own keys: every keyboard key, every pad button and
-// stick, and the mouse delta. That takes the keys away from the game exactly like
-// an open garage or vehicle-spawner menu does, instead of only stopping the car.
-//
-// gameProcessEvent fires after the frame's game logic, so the vehicle fields are
-// cleared as well - otherwise physics has already consumed this frame's input and
-// the car coasts for one more frame.
-static void FreezeServiceInput(CVehicle* veh) {
+// The garage bits are re-asserted every frame because the game clears them in its
+// own control pass. The input buffers are zeroed after the menu has sampled them,
+// and the vehicle is pinned so physics cannot coast on last frame's throttle.
+static void FreezeServiceInput(CVehicle* veh, float dt) {
+    HoldServiceControlBits();
+
     CPad* pad = CPad::GetPad(0);
     if (pad) {
         memset(&pad->NewState, 0, sizeof(CControllerState));
@@ -601,13 +644,7 @@ static void FreezeServiceInput(CVehicle* veh) {
         veh->m_vecTurnSpeed   = CVector(0.0f, 0.0f, 0.0f);
     }
 
-    if (s_serviceCamLocked) {
-        // Rewrite the rendered camera transform every frame. This is what actually
-        // holds the view still: the matrix is the final output of CCamera::Process,
-        // so overwriting it here locks the picture in place regardless of what the
-        // camera wanted to do this frame.
-        TheCamera.m_mCameraMatrix = s_servicePrevCamMatrix;
-    }
+    UpdateServiceCamera(dt);
 }
 
 // True when the vehicle has anything worth repairing. Fix() restores engine health,
@@ -645,8 +682,6 @@ void Radar::UpdateFuelServices() {
                   && player->m_pPlayerData->m_pWanted->m_nWantedLevel > 0;
 
     // Nearest live pump object within reach, and whether the car is parked there.
-    // The pump's own position is the anchor, so the prompt sits on the physical
-    // pump instead of a coordinate that may not match the map.
     CObject* pump = nullptr;
     CVector pumpPos(0.0f, 0.0f, 0.0f);
     if (eligible) {
@@ -661,34 +696,55 @@ void Radar::UpdateFuelServices() {
     // control immediately.
     if (s_serviceOpen && (wanted || !eligible || !pump)) s_serviceOpen = false;
 
-    // Controls are only held while the menu is actually up. Doing this before the
-    // open/closed split guarantees the pad is released on every exit path.
-    if (!s_serviceOpen && s_servicePadDisabled) {
-        SetServiceInputLock(false);
-        s_servicePadDisabled = false;
-    }
-
     float dt = CTimer::ms_fTimeStep * 0.02f;
     if (dt <= 0.0f || dt > 0.1f) dt = 0.0166f;
 
-    bool selectDown = (g_config.serviceSelectKey > 0 && (GetAsyncKeyState(g_config.serviceSelectKey) & 0x8000) != 0)
-                   || IsPadButtonDown(g_config.serviceSelectPad);
-    bool upDown     = (g_config.serviceUpKey > 0 && (GetAsyncKeyState(g_config.serviceUpKey) & 0x8000) != 0)
-                   || IsPadButtonDown(g_config.serviceUpPad);
-    bool downDown   = (g_config.serviceDownKey > 0 && (GetAsyncKeyState(g_config.serviceDownKey) & 0x8000) != 0)
-                   || IsPadButtonDown(g_config.serviceDownPad);
-    bool backDown   = (g_config.serviceBackKey > 0 && (GetAsyncKeyState(g_config.serviceBackKey) & 0x8000) != 0)
-                   || IsPadButtonDown(g_config.serviceBackPad);
-    bool holdDown   = (g_config.serviceKey > 0 && (GetAsyncKeyState(g_config.serviceKey) & 0x8000) != 0)
-                   || IsPadButtonDown(g_config.servicePad);
+    bool selectKey = g_config.serviceSelectKey > 0 && (GetAsyncKeyState(g_config.serviceSelectKey) & 0x8000) != 0;
+    bool upKey     = g_config.serviceUpKey > 0 && (GetAsyncKeyState(g_config.serviceUpKey) & 0x8000) != 0;
+    bool downKey   = g_config.serviceDownKey > 0 && (GetAsyncKeyState(g_config.serviceDownKey) & 0x8000) != 0;
+    bool backKey   = g_config.serviceBackKey > 0 && (GetAsyncKeyState(g_config.serviceBackKey) & 0x8000) != 0;
+    bool holdKey   = g_config.serviceKey > 0 && (GetAsyncKeyState(g_config.serviceKey) & 0x8000) != 0;
+
+    bool selectPad = IsPadButtonDown(g_config.serviceSelectPad);
+    bool upPad     = IsPadButtonDown(g_config.serviceUpPad);
+    bool downPad   = IsPadButtonDown(g_config.serviceDownPad);
+    bool backPad   = IsPadButtonDown(g_config.serviceBackPad);
+    bool holdPad   = IsPadButtonDown(g_config.servicePad);
+
+    bool selectDown = selectKey || selectPad;
+    bool upDown     = upKey     || upPad;
+    bool downDown   = downKey   || downPad;
+    bool backDown   = backKey   || backPad;
+    bool holdDown   = holdKey   || holdPad;
+
+    // Remember which device was used last so the badges match the player's hands.
+    if (selectPad || upPad || downPad || backPad || holdPad) s_serviceUsingPad = true;
+    else if (selectKey || upKey || downKey || backKey || holdKey) s_serviceUsingPad = false;
 
     // Freeze only after the pad has been sampled above, otherwise clearing the
     // input state would also swallow the menu's own navigation.
-    if (s_serviceOpen) FreezeServiceInput(veh);
+    if (s_serviceOpen) FreezeServiceInput(veh, dt);
 
     if (!s_serviceOpen) {
+        // One frame of grace after closing: the key that dismissed the menu must not
+        // reach the game as "exit vehicle". Cleared here so it cannot stick.
+        if (s_serviceSuppressFrames > 0) {
+            --s_serviceSuppressFrames;
+            HoldServiceControlBits();
+            CPad* pad = CPad::GetPad(0);
+            if (pad) {
+                memset(&pad->NewState, 0, sizeof(CControllerState));
+                memset(pad->NewKeyState.standardKeys, 0, sizeof(pad->NewKeyState.standardKeys));
+            }
+        } else if (s_servicePadDisabled) {
+            ReleaseServiceControlBits();
+            s_servicePadDisabled = false;
+        }
+
         if (canOpen) {
-            s_serviceAnchor = CVector(pumpPos.x, pumpPos.y, pumpPos.z + 1.6f);
+            // Anchor at the player's head height rather than the pump's top, so the
+            // label reads at eye level instead of floating above the canopy.
+            s_serviceAnchor = player->GetPosition() + CVector(0.0f, 0.0f, 0.65f);
             s_servicePromptAlpha = std::min(1.0f, s_servicePromptAlpha + dt * 6.0f);
             if (holdDown) {
                 s_serviceHoldTime += dt;
@@ -696,10 +752,9 @@ void Radar::UpdateFuelServices() {
                     s_serviceOpen = true;
                     s_serviceRow = SERVICE_ROW_REFUEL;
                     s_serviceHoldTime = 0.0f;
-                    if (!s_servicePadDisabled) {
-                        SetServiceInputLock(true);
-                        s_servicePadDisabled = true;
-                    }
+                    HoldServiceControlBits();
+                    s_servicePadDisabled = true;
+                    BeginServiceCamera(veh->GetPosition(), pumpPos);
                 }
             } else {
                 s_serviceHoldTime = 0.0f;
@@ -720,6 +775,8 @@ void Radar::UpdateFuelServices() {
 
     if (backDown && !s_serviceLastBack) {
         s_serviceOpen = false;
+        s_serviceCamLocked = false;
+        s_serviceSuppressFrames = 2;
     } else if (selectDown && !s_serviceLastSelect) {
         VehicleFuelExt& ext = s_vehicleFuelExt.Get(veh);
         if (s_serviceRow == SERVICE_ROW_REFUEL) {
@@ -741,9 +798,4 @@ void Radar::UpdateFuelServices() {
     }
     s_serviceLastSelect = selectDown;
     s_serviceLastBack = backDown;
-
-    if (!s_serviceOpen && s_servicePadDisabled) {
-        SetServiceInputLock(false);
-        s_servicePadDisabled = false;
-    }
 }

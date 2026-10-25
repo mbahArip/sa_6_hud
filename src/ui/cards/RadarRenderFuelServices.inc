@@ -130,7 +130,7 @@ void Radar::DrawFuelServices() {
 
     if (!s_serviceOpen) {
         char badge[16] = {};
-        KeyBadgeName(g_config.serviceKey, g_config.servicePad, badge, sizeof(badge));
+        KeyBadgeName(g_config.serviceKey, g_config.servicePad, s_serviceUsingPad, badge, sizeof(badge));
 
         float radius = 20.0f * scale;
         float totalW = MeasureServiceRow(radius, "Services");
@@ -144,7 +144,7 @@ void Radar::DrawFuelServices() {
     RowView rows[SERVICE_ROW_COUNT] = {};
 
     for (int i = 0; i < SERVICE_ROW_COUNT; ++i) {
-        KeyBadgeName(g_config.serviceSelectKey, g_config.serviceSelectPad,
+        KeyBadgeName(g_config.serviceSelectKey, g_config.serviceSelectPad, s_serviceUsingPad,
                      rows[i].badge, sizeof(rows[i].badge));
     }
 
@@ -177,7 +177,7 @@ void Radar::DrawFuelServices() {
 
     // Bottom-right back hint, screen space.
     char backBadge[16] = {};
-    KeyBadgeName(g_config.serviceBackKey, g_config.serviceBackPad, backBadge, sizeof(backBadge));
+    KeyBadgeName(g_config.serviceBackKey, g_config.serviceBackPad, s_serviceUsingPad, backBadge, sizeof(backBadge));
 
     float backRadius = 16.0f * scale;
     float backW = MeasureServiceRow(backRadius, "Back");

@@ -82,8 +82,22 @@ static bool     s_serviceLastSelect  = false;
 static bool     s_serviceLastUp      = false;
 static bool     s_serviceLastDown    = false;
 static bool     s_serviceLastBack    = false;
-static CMatrix  s_servicePrevCamMatrix;
 static bool     s_serviceCamLocked   = false;
+
+// Camera dolly toward the pump: start matrix captured on open, target built from
+// the car and pump positions, blended over kServiceCamBlendSeconds.
+static const float kServiceCamBlendSeconds = 0.45f;
+static CMatrix  s_serviceStartCamMatrix;
+static CVector  s_serviceCamFromPos(0.0f, 0.0f, 0.0f);
+static CVector  s_serviceCamToPos(0.0f, 0.0f, 0.0f);
+static CVector  s_serviceCamLookAt(0.0f, 0.0f, 0.0f);
+static float    s_serviceCamBlend     = 0.0f;
+
+// Which device the player last touched, so the key badges match their hands.
+static bool     s_serviceUsingPad     = false;
+
+// One-frame guard: the key that closes the menu must not also exit the vehicle.
+static int      s_serviceSuppressFrames = 0;
 
 struct VehicleFuelExt {
     float fuelLevel = -1.0f;
