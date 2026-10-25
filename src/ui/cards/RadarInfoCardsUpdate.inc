@@ -568,65 +568,45 @@ static void SetServiceInputLock(bool locked) {
     }
 }
 
-// Holds the vehicle still while the list is open.
+// Holds the whole game still while the list is open.
 //
-// Zeroing the vehicle fields alone is not enough: gameProcessEvent fires after the
-// game logic for the frame, so physics has already consumed that frame's input.
-// Clearing CPad::NewState is what actually stops it, because the next frame's
-// vehicle processing reads zeroes. The vehicle fields are cleared as well so the
-// car cannot coast on momentum.
-static void FreezeServiceVehicle(CVehicle* veh) {
+// DisablePlayerControls is a 9-bit flag union, not a master switch, so it was
+// never doing anything. Instead the entire input state is zeroed every frame after
+// the menu has sampled its own keys: every keyboard key, every pad button and
+// stick, and the mouse delta. That takes the keys away from the game exactly like
+// an open garage or vehicle-spawner menu does, instead of only stopping the car.
+//
+// gameProcessEvent fires after the frame's game logic, so the vehicle fields are
+// cleared as well - otherwise physics has already consumed this frame's input and
+// the car coasts for one more frame.
+static void FreezeServiceInput(CVehicle* veh) {
     CPad* pad = CPad::GetPad(0);
     if (pad) {
-        CControllerState& s = pad->NewState;
-        s.LeftStickX  = 0;
-        s.LeftStickY  = 0;
-        s.ButtonCross = 0;    // accelerate / sprint
-        s.ButtonSquare = 0;   // brake / reverse
-        s.RightShoulder1 = 0; // handbrake
-        s.ButtonCircle = 0;   // fire
-        s.ButtonTriangle = 0; // enter / exit
+        memset(&pad->NewState, 0, sizeof(CControllerState));
+        memset(pad->NewKeyState.standardKeys, 0, sizeof(pad->NewKeyState.standardKeys));
+        CPad::NewMouseControllerState.x = 0;
+        CPad::NewMouseControllerState.y = 0;
     }
 
-    if (!veh) return;
-    veh->m_fGasPedal      = 0.0f;
-    veh->m_fBreakPedal    = 1.0f;
-    veh->m_fSteerAngle    = 0.0f;
-    veh->m_f2ndSteerAngle = 0.0f;
-    veh->m_vecMoveSpeed   = CVector(0.0f, 0.0f, 0.0f);
-    veh->m_vecTurnSpeed   = CVector(0.0f, 0.0f, 0.0f);
+    if (veh) {
+        veh->m_fGasPedal      = 0.0f;
+        veh->m_fBreakPedal    = 1.0f;
+        veh->m_fSteerAngle    = 0.0f;
+        veh->m_f2ndSteerAngle = 0.0f;
+        veh->m_vecMoveSpeed   = CVector(0.0f, 0.0f, 0.0f);
+        veh->m_vecTurnSpeed   = CVector(0.0f, 0.0f, 0.0f);
+    }
 
     if (s_serviceFovLocked) {
         TheCamera.m_aCams[TheCamera.m_nActiveCam].m_fFOV = s_servicePrevFov * 0.78f;
     }
 }
 
-// Repairs the body only: panels, doors, lights and tyres come back, but engine
-// health and engine status are left exactly as they were, so the telemetry gauge
-// keeps reading the real wear.
-static void RepairBodyOnly(CVehicle* veh) {
-    if (!veh) return;
-    switch (veh->m_nVehicleSubClass) {
-        case VEHICLE_AUTOMOBILE:
-        case VEHICLE_MTRUCK:
-        case VEHICLE_QUAD: {
-            CAutomobile* car = static_cast<CAutomobile*>(veh);
-            const float hp = veh->m_fHealth;
-            const unsigned char engine = car->m_damageManager.m_nEngineStatus;
-            car->m_damageManager.ResetDamageStatus();
-            car->m_damageManager.m_nEngineStatus = engine;
-            veh->m_fHealth = hp;
-            break;
-        }
-        default:
-            break;
-    }
-}
-
-// True when the body has anything worth repairing. Engine damage alone does not
-// count, because this service deliberately leaves the engine untouched.
-static bool BodyNeedsRepair(const CVehicle* veh) {
+// True when the vehicle has anything worth repairing. Fix() restores engine health,
+// panels, doors, lights and tyres, so any of those being off counts.
+static bool NeedsRepair(const CVehicle* veh) {
     if (!veh) return false;
+    if (veh->m_fHealth < 995.0f) return true;
     switch (veh->m_nVehicleSubClass) {
         case VEHICLE_AUTOMOBILE:
         case VEHICLE_MTRUCK:
@@ -697,9 +677,9 @@ void Radar::UpdateFuelServices() {
     bool holdDown   = (g_config.serviceKey > 0 && (GetAsyncKeyState(g_config.serviceKey) & 0x8000) != 0)
                    || IsPadButtonDown(g_config.servicePad);
 
-    // Freeze only after the pad has been sampled above, otherwise clearing
-    // CPad::NewState would also swallow the menu's own navigation input.
-    if (s_serviceOpen) FreezeServiceVehicle(veh);
+    // Freeze only after the pad has been sampled above, otherwise clearing the
+    // input state would also swallow the menu's own navigation.
+    if (s_serviceOpen) FreezeServiceInput(veh);
 
     if (!s_serviceOpen) {
         if (canOpen) {
@@ -747,10 +727,10 @@ void Radar::UpdateFuelServices() {
             }
         } else {
             int price = RepairPrice(veh);
-            if (BodyNeedsRepair(veh) && CWorld::Players[0].m_nMoney >= price) {
+            if (NeedsRepair(veh) && CWorld::Players[0].m_nMoney >= price) {
                 CWorld::Players[0].m_nMoney -= price;
-                RepairBodyOnly(veh);
-                LogWrite("fuel: body repaired for $%d", price);
+                veh->Fix();
+                LogWrite("fuel: repaired for $%d", price);
             }
         }
     }

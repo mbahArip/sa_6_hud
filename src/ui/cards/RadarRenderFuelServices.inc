@@ -43,8 +43,10 @@ void DrawKeyBadge(float cx, float cy, float radius, const char* badge,
         DrawCircle(cx + midRad * cosf(endAngle), cy + midRad * sinf(endAngle), trackW * 0.5f, textCol, 24);
     }
 
-    // Shrink the label to fit inside the disc.
-    float fontScale = radius * 0.055f;
+    // Shrink the label to fit inside the disc. Long names like SPACE, ENTER and
+    // DDOWN need to be measured, not assumed: the naive radius-proportional scale
+    // overflowed the ring for anything past ~3 characters.
+    float fontScale = radius * 0.030f;
     CFont::SetFontStyle(FONT_MENU);
     CFont::SetProportional(true);
     CFont::SetJustify(false);
@@ -52,8 +54,16 @@ void DrawKeyBadge(float cx, float cy, float radius, const char* badge,
     CFont::SetEdge(0);
     CFont::SetDropShadowPosition(0);
     CFont::SetScale(fontScale, fontScale * 1.9f);
+
+    const float maxWidth = radius * 1.30f;
+    float textW = CFont::GetStringWidth(badge, true, false);
+    if (textW > maxWidth && textW > 0.0f) {
+        float fit = maxWidth / textW;
+        CFont::SetScale(fontScale * fit, fontScale * 1.9f * fit);
+    }
+
     CFont::SetColor(textCol);
-    CFont::PrintString(cx, cy - radius * 0.42f, badge);
+    CFont::PrintString(cx, cy - radius * 0.30f, badge);
 }
 
 // Draws a full row: badge disc, then the label to its right. Returns the row's
@@ -140,7 +150,7 @@ void Radar::DrawFuelServices() {
 
     VehicleFuelExt& ext = s_vehicleFuelExt.Get(veh);
     bool tankFull = ext.fuelLevel >= 0.99f;
-    bool bodyOk = !BodyNeedsRepair(veh);
+    bool bodyOk = !NeedsRepair(veh);
 
     snprintf(rows[SERVICE_ROW_REFUEL].label, sizeof(rows[SERVICE_ROW_REFUEL].label), "%s",
              tankFull ? "Tank is full" : "Refuel");
