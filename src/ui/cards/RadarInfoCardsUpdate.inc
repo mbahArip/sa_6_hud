@@ -636,17 +636,14 @@ void Radar::UpdateFuelServices() {
     bool wanted = player->m_pPlayerData && player->m_pPlayerData->m_pWanted
                   && player->m_pPlayerData->m_pWanted->m_nWantedLevel > 0;
 
-    // Nearest pump within reach, and whether the car is actually parked there.
-    const GasStationPos* pump = nullptr;
+    // Nearest live pump object within reach, and whether the car is parked there.
+    // The pump's own position is the anchor, so the prompt sits on the physical
+    // pump instead of a coordinate that may not match the map.
+    CObject* pump = nullptr;
+    CVector pumpPos(0.0f, 0.0f, 0.0f);
     if (eligible) {
-        float bestSq = 12.0f * 12.0f;
-        CVector pos = veh->GetPosition();
-        for (const auto& gs : kGasStations) {
-            float dx = pos.x - gs.x;
-            float dy = pos.y - gs.y;
-            float sq = dx * dx + dy * dy;
-            if (sq < bestSq) { bestSq = sq; pump = &gs; }
-        }
+        pump = FindNearestPump(veh->GetPosition(), 12.0f);
+        if (pump) pumpPos = pump->GetPosition();
     }
 
     bool stopped = eligible && veh->m_vecMoveSpeed.Magnitude() < 0.05f;
@@ -683,7 +680,7 @@ void Radar::UpdateFuelServices() {
 
     if (!s_serviceOpen) {
         if (canOpen) {
-            s_serviceAnchor = CVector(pump->x, pump->y, pump->z + 0.9f);
+            s_serviceAnchor = CVector(pumpPos.x, pumpPos.y, pumpPos.z + 1.6f);
             s_servicePromptAlpha = std::min(1.0f, s_servicePromptAlpha + dt * 6.0f);
             if (holdDown) {
                 s_serviceHoldTime += dt;
@@ -718,7 +715,7 @@ void Radar::UpdateFuelServices() {
     } else if (selectDown && !s_serviceLastSelect) {
         VehicleFuelExt& ext = s_vehicleFuelExt.Get(veh);
         if (s_serviceRow == SERVICE_ROW_REFUEL) {
-            int price = RefuelPrice(CVector(pump->x, pump->y, pump->z), ext.fuelLevel);
+            int price = RefuelPrice(pumpPos, ext.fuelLevel);
             if (price > 0 && CWorld::Players[0].m_nMoney >= price) {
                 CWorld::Players[0].m_nMoney -= price;
                 s_vehFuel = 1.0f;

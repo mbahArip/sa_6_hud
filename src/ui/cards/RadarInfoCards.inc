@@ -92,32 +92,57 @@ struct VehicleFuelExt {
 };
 static plugin::VehicleExtendedData<VehicleFuelExt> s_vehicleFuelExt;
 
-struct GasStationPos { float x, y, z; };
-static const GasStationPos kGasStations[] = {
-    { 1938.0f, -1773.0f, 13.5f }, // Idlewood
-    { 1004.0f, -939.0f,  42.0f }, // Mulholland
-    { -93.0f,  -1175.0f, 2.4f },  // Flint County
-    { 658.0f,  -565.0f,  16.3f }, // Dillimore
-    { 1383.0f, 461.0f,   20.2f }, // Montgomery
-    { -2249.0f,-2559.0f, 31.9f }, // Whetstone
-    { -1606.0f,-2714.0f, 48.5f }, // Angel Pine
-    { -2413.0f, 976.0f,  45.3f }, // Juniper Hill
-    { -1676.0f, 413.0f,  7.2f  }, // Easter Basin
-    { -1328.0f, 2677.0f, 50.1f }, // El Quebrados
-    { -732.0f,  2742.0f, 47.2f }, // Tierra Robada
-    { 69.0f,    1219.0f, 18.8f }, // Fort Carson
-    { 612.0f,   1694.0f, 7.0f  }, // Bone County
-    { 2115.0f,  920.0f,  10.8f }, // Las Venturas South
-    { 2639.0f,  1106.0f, 10.8f }, // Las Venturas East
-    { 2147.0f,  2748.0f, 10.8f }, // Las Venturas North
-    { 1596.0f,  2198.0f, 10.8f }, // Redsands East
-};
 static bool s_lastRadarEnabled   = false;
 static bool s_lastGpsEnabled     = false;
 static bool s_lastSearchEnabled  = false;
 static bool s_lastCardsEnabled   = false;
 static bool s_lastAurasEnabled   = false;
 static bool s_lastArcsEnabled    = false;
+
+// The three DFFs San Andreas uses for every petrol pump in the world. Matching by
+// model covers all ~40 pumps, including the ones missing from any hand-written list.
+static bool s_pumpModelsResolved = false;
+static int  s_pumpModels[3] = { -1, -1, -1 };
+
+static void ResolvePumpModels() {
+    if (s_pumpModelsResolved) return;
+    s_pumpModelsResolved = true;
+    static const char* const kNames[3] = { "washgaspump", "petrolpumpnew", "vegspetrolpump" };
+    for (int i = 0; i < 3; ++i) {
+        int id = -1;
+        if (CModelInfo::GetModelInfo(kNames[i], &id) && id >= 0) s_pumpModels[i] = id;
+    }
+    LogWrite("fuel: pump models %d/%d/%d", s_pumpModels[0], s_pumpModels[1], s_pumpModels[2]);
+}
+
+static bool IsPumpModel(int modelIndex) {
+    for (int i = 0; i < 3; ++i) {
+        if (s_pumpModels[i] >= 0 && modelIndex == s_pumpModels[i]) return true;
+    }
+    return false;
+}
+
+// Nearest pump object to `pos` within `radius`, or null. Scans the live object pool
+// so the anchor lands on the real pump rather than a hardcoded coordinate.
+static CObject* FindNearestPump(const CVector& pos, float radius) {
+    ResolvePumpModels();
+    if (!CPools::ms_pObjectPool) return nullptr;
+
+    CObject* best = nullptr;
+    float bestSq = radius * radius;
+    const int size = CPools::ms_pObjectPool->m_nSize;
+    for (int i = 0; i < size; ++i) {
+        CObject* obj = CPools::ms_pObjectPool->GetAt(i);
+        if (!obj || !IsPumpModel(obj->m_nModelIndex)) continue;
+
+        const CVector objPos = obj->GetPosition();
+        const float dx = pos.x - objPos.x;
+        const float dy = pos.y - objPos.y;
+        const float sq = dx * dx + dy * dy;
+        if (sq < bestSq) { bestSq = sq; best = obj; }
+    }
+    return best;
+}
 
 static CVehicle* GetStablePlayerVehicle(CPlayerPed* player) {
     if (!player || !player->bInVehicle || !player->m_pVehicle) return nullptr;
