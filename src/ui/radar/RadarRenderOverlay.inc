@@ -89,6 +89,7 @@ void Radar::DrawOverlay() {
         }
         DrawPlayerPuck(g_radarRect, alpha);
         DrawPinMarker(g_radarRect, alpha);
+        DrawPumpIcons(g_radarRect, alpha, false);
         DrawGpsDistance(g_radarRect, alpha);
     }
 

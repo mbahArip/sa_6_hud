@@ -585,15 +585,13 @@ static void EnterPumpView() {
 }
 
 // Takes control aimed at the car so the game glides from the pump view into the
-// orbit. The FixedModeVector argument is a DIRECTION, not a look-at point.
+// orbit. Aim point goes in m_vecFixedModeVector, the same field the game's
+// POINT_CAMERA_AT_POINT writes.
 static void EnterOrbitView(const CVehicle* veh) {
     if (!veh) return;
     CVector carPos = veh->GetPosition();
     CVector lookAt = carPos + CVector(0.0f, 0.0f, 0.5f);
-    CVector dir = lookAt - s_serviceCamToPos;
-    if (dir.Magnitude() < 0.01f) dir = CVector(0.0f, 1.0f, 0.0f);
-    dir = dir.Normalized();
-    TheCamera.TakeControlNoEntity(&dir, SWITCHTYPE_INTERPOLATION, 1);
+    TheCamera.TakeControlNoEntity(&lookAt, SWITCHTYPE_INTERPOLATION, 1);
 }
 
 static void BeginServiceCamera(const CVector& vehPos, const CVector& pumpPos) {
@@ -617,18 +615,16 @@ static void BeginServiceCamera(const CVector& vehPos, const CVector& pumpPos) {
     s_servicePrevCarZoom = TheCamera.m_nCarZoom;
 }
 
-// Pushes the orbit source into the game camera. m_vecCamFixedModeVector is a
-// DIRECTION, not a look-at point - writing world coordinates there normalises to
-// something near-vertical, which is why the orbit only tilted down a little instead
-// of circling. SetCamPositionForFixedMode moves the source; the direction is written
-// separately.
+// Pushes the orbit source into the game camera.
+//
+// The aim goes into CCamera::m_vecFixedModeVector (the POINT to look at), not
+// CCam::m_vecCamFixedModeVector - that one is a direction, and writing a point there
+// normalises to something near-vertical, which is why the camera looked away instead
+// of circling. Position and aim point are the same pair the game's own
+// SET_FIXED_CAMERA_POSITION / POINT_CAMERA_AT_POINT sequence writes.
 static void DriveOrbit(const CVector& source, const CVector& lookAt) {
     TheCamera.SetCamPositionForFixedMode(&source, &kServiceCamUp);
-
-    CVector dir = lookAt - source;
-    if (dir.Magnitude() < 0.01f) dir = CVector(0.0f, 1.0f, 0.0f);
-    dir = dir.Normalized();
-    TheCamera.m_aCams[TheCamera.m_nActiveCam].m_vecCamFixedModeVector = dir;
+    TheCamera.m_vecFixedModeVector = lookAt;
 }
 
 // Keeps the orbit running while an operation is active. Transitions in and out are

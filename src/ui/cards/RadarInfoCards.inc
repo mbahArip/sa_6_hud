@@ -180,6 +180,51 @@ static CObject* FindNearestPump(const CVector& pos, float radius) {
     return best;
 }
 
+// Clustered pump positions for the radar icons. Pumps closer than this to an
+// existing cluster merge into it, so a forecourt with four pumps shows one icon.
+static const float kPumpClusterRadius = 10.0f;
+static const int   kMaxPumpClusters   = 64;
+
+struct PumpCluster {
+    CVector pos;
+    int     count;
+};
+
+static PumpCluster s_pumpClusters[kMaxPumpClusters];
+static int         s_pumpClusterCount = 0;
+
+// Rebuilds the cluster list from the live object pool. Cheap enough to run per
+// frame: the pool is a few hundred entries and pumps are ~40 in the whole map.
+static void RebuildPumpClusters() {
+    ResolvePumpModels();
+    s_pumpClusterCount = 0;
+    if (!CPools::ms_pObjectPool) return;
+
+    const float clusterSq = kPumpClusterRadius * kPumpClusterRadius;
+    const int size = CPools::ms_pObjectPool->m_nSize;
+    for (int i = 0; i < size; ++i) {
+        CObject* obj = CPools::ms_pObjectPool->GetAt(i);
+        if (!obj || !IsPumpModel(obj->m_nModelIndex)) continue;
+
+        const CVector objPos = obj->GetPosition();
+        bool merged = false;
+        for (int c = 0; c < s_pumpClusterCount; ++c) {
+            const float dx = objPos.x - s_pumpClusters[c].pos.x;
+            const float dy = objPos.y - s_pumpClusters[c].pos.y;
+            if (dx * dx + dy * dy < clusterSq) {
+                s_pumpClusters[c].count++;
+                merged = true;
+                break;
+            }
+        }
+        if (!merged && s_pumpClusterCount < kMaxPumpClusters) {
+            s_pumpClusters[s_pumpClusterCount].pos   = objPos;
+            s_pumpClusters[s_pumpClusterCount].count = 1;
+            s_pumpClusterCount++;
+        }
+    }
+}
+
 static CVehicle* GetStablePlayerVehicle(CPlayerPed* player) {
     if (!player || !player->bInVehicle || !player->m_pVehicle) return nullptr;
     if (!CPools::ms_pVehiclePool || !CPools::ms_pVehiclePool->IsObjectValid(player->m_pVehicle)) return nullptr;
