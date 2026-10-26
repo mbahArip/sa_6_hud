@@ -620,10 +620,13 @@ static void UpdateServiceCamera(float dt) {
     cam.up    = right.Cross(at).Normalized();
     cam.at    = at;
 
-    // The game keeps the previous frame's transform here and blends against it for
-    // several effects. Leaving it stale makes the renderer use the old camera, which
-    // is why the dolly appeared to do nothing. Keep both in sync.
+    // m_mCameraMatrix is only a staging CMatrix; the renderer reads the RwCamera's
+    // frame matrix. UpdateRW() copies the basis into that attached matrix, which is
+    // what actually moves the view. Without it the main scene keeps the game's own
+    // camera - only the reflection pass, which derives from m_mCameraMatrix, moves.
+    cam.UpdateRW();
     TheCamera.m_mCameraMatrixOld = cam;
+    TheCamera.m_mCameraMatrixOld.UpdateRW();
 }
 
 // Holds the whole game still while the list is open.
