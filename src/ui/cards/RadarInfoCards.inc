@@ -99,6 +99,19 @@ static float    s_serviceCamBlend     = 0.0f;
 // Which device the player last touched, so the key badges match their hands.
 static bool     s_serviceUsingPad     = false;
 
+// Active operation (refuel / repair) with a timed fill and a slow orbit camera.
+enum eServiceOp {
+    SERVICE_OP_NONE = 0,
+    SERVICE_OP_REFUEL,
+    SERVICE_OP_REPAIR
+};
+
+static int      s_serviceOp          = SERVICE_OP_NONE;
+static float    s_serviceOpTimer     = 0.0f;
+static float    s_serviceOpDuration  = 0.0f;
+static float    s_serviceOpFromValue = 0.0f;
+static float    s_serviceOrbitAngle  = 0.0f;
+
 // One-frame guard: the key that closes the menu must not also exit the vehicle.
 static int      s_serviceSuppressFrames = 0;
 

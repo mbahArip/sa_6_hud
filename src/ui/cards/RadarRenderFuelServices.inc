@@ -11,7 +11,24 @@ namespace {
 
 // Hardcoded UI scale for the services overlay. Kept as a constant because the
 // layout is tuned by eye, not by players.
-const float kServiceScale = 0.80f;
+const float kServiceScale = 0.72f;
+
+// Reserved width for the row block, so the block does not shift when a row swaps
+// between its enabled and disabled label. Measured from the widest possible text.
+float ServiceBlockWidth(float radius) {
+    const float sH = ScreenH();
+    const float scale = (sH / 720.0f) * kServiceScale;
+    const float labelScale = 0.62f * scale;
+
+    CFont::SetFontStyle(FONT_MENU);
+    CFont::SetProportional(true);
+    CFont::SetScale(labelScale, labelScale * 1.9f);
+
+    float widest = CFont::GetStringWidth("No repair needed", true, false);
+    widest = std::max(widest, CFont::GetStringWidth("Refuel ($99999)", true, false));
+    widest = std::max(widest, CFont::GetStringWidth("Tank is full", true, false));
+    return radius * 2.0f + radius * 0.45f + widest;
+}
 
 // Projects a world position to screen pixels. Returns false when the point is
 // behind the camera or off screen.
@@ -31,19 +48,23 @@ bool ProjectAnchor(const CVector& worldPos, float& outX, float& outY) {
 void DrawKeyBadge(float cx, float cy, float radius, const char* badge,
                   CRGBA ringCol, CRGBA fillCol, CRGBA textCol, float progress) {
     const float trackW = radius * 0.16f;
+    // Gap so the fill ring reads as separate from the background disc.
+    const float gap = trackW * 0.7f;
+    const float innerR = radius - trackW - gap;
+    const float outerR = radius - gap;
 
     DrawCircle(cx, cy, radius, fillCol, 48);
 
     // Track ring, then the filled portion on top of it.
-    DrawArcStrip(cx, cy, radius - trackW, radius, 0.0f, 2.0f * kPi, ringCol, 48);
+    DrawArcStrip(cx, cy, innerR, outerR, 0.0f, 2.0f * kPi, ringCol, 48);
 
     if (progress > 0.001f) {
         const float startAngle = -kPi * 0.5f;
         const float endAngle   = startAngle + (2.0f * kPi * Clampf(progress, 0.0f, 1.0f));
-        DrawArcStrip(cx, cy, radius - trackW, radius, startAngle, endAngle, textCol, 48);
+        DrawArcStrip(cx, cy, innerR, outerR, startAngle, endAngle, textCol, 48);
 
         // Round cap so the leading edge matches the telemetry gauges.
-        const float midRad = radius - trackW * 0.5f;
+        const float midRad = (innerR + outerR) * 0.5f;
         DrawCircle(cx + midRad * cosf(endAngle), cy + midRad * sinf(endAngle), trackW * 0.5f, textCol, 24);
     }
 
@@ -55,7 +76,7 @@ void DrawKeyBadge(float cx, float cy, float radius, const char* badge,
     CFont::SetProportional(true);
     CFont::SetJustify(false);
     CFont::SetOrientation(ALIGN_CENTER);
-    CFont::SetEdge(0);
+    CFont::SetEdge(1);
     CFont::SetDropShadowPosition(0);
     CFont::SetScale(fontScale, fontScale * 1.9f);
 
@@ -67,6 +88,7 @@ void DrawKeyBadge(float cx, float cy, float radius, const char* badge,
     }
 
     CFont::SetColor(textCol);
+    CFont::SetDropColor(fillCol);
     CFont::PrintString(cx, cy - radius * 0.30f, badge);
 }
 
@@ -111,7 +133,8 @@ void DrawServiceRow(float leftX, float centerY, float radius, const char* badge,
     CFont::SetProportional(true);
     CFont::SetJustify(false);
     CFont::SetOrientation(ALIGN_LEFT);
-    CFont::SetEdge(0);
+    CFont::SetEdge(1);
+    CFont::SetDropColor(fillCol);
     CFont::SetDropShadowPosition(0);
     CFont::SetScale(labelScale, labelScale * 1.9f);
     CFont::SetColor(textCol);
@@ -182,21 +205,29 @@ void Radar::DrawFuelServices() {
     float rowH = radius * 2.6f;
     float rowY = sy;
 
-    // Centre the block on the anchor, but align every row to the same left edge so
-    // the badges and labels line up with each other.
-    float blockW = 0.0f;
-    for (int i = 0; i < SERVICE_ROW_COUNT; ++i) {
-        blockW = std::max(blockW, MeasureServiceRow(radius, rows[i].label, rows[i].price));
-    }
+    // Centre the block on the anchor using a RESERVED width, so the position does
+    // not shift when a row swaps between its enabled and disabled label.
+    float blockW = ServiceBlockWidth(radius);
     float rowLeft = sx - blockW * 0.5f;
+
+    // Progress of a running operation drives the active row's ring.
+    float opProgress = 0.0f;
+    if (s_serviceOp != SERVICE_OP_NONE && s_serviceOpDuration > 0.0f) {
+        opProgress = Clampf(s_serviceOpTimer / s_serviceOpDuration, 0.0f, 1.0f);
+    }
 
     for (int i = 0; i < SERVICE_ROW_COUNT; ++i) {
         bool selected = (i == s_serviceRow);
         CRGBA col = rows[i].enabled ? (selected ? accent : textCol) : dimCol;
         CRGBA ring = rows[i].enabled ? (selected ? accent : trackCol) : trackCol;
 
+        // Only the row whose operation is running shows a fill.
+        float ringProgress = 0.0f;
+        if (s_serviceOp == SERVICE_OP_REFUEL && i == SERVICE_ROW_REFUEL) ringProgress = opProgress;
+        if (s_serviceOp == SERVICE_OP_REPAIR && i == SERVICE_ROW_REPAIR) ringProgress = opProgress;
+
         DrawServiceRow(rowLeft, rowY, radius, rows[i].badge, rows[i].label, rows[i].price,
-                       ring, discBg, col, 0.0f);
+                       ring, discBg, col, ringProgress);
         rowY += rowH;
     }
 

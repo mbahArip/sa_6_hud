@@ -610,16 +610,46 @@ static void BeginServiceCamera(const CVector& vehPos, const CVector& pumpPos) { 
     TheCamera.TakeControlNoEntity(&s_serviceCamLookAt, SWITCHTYPE_INTERPOLATION, 1);
     TheCamera.SetCamPositionForFixedMode(&s_serviceCamToPos, &kServiceCamUp);
 
+    // Load the scene around the pump once, since the fixed camera is about to look
+    // in a direction the game never streamed for.
+    // Removed: LoadScene was blocking, which is the delay between pressing the key
+    // and the menu appearing. MODE_FIXED streams the pump direction natively.
+
     s_servicePrevInGarage = TheCamera.m_bPlayerIsInGarage;
     TheCamera.m_bPlayerIsInGarage = true;
     s_servicePrevCarZoom = TheCamera.m_nCarZoom;
 }
 
-// Keeps the target pinned while the game runs its own transition. No source lerp:
-// CCamera interpolates the glide itself.
+// Keeps the target pinned while the game runs its own transition. While an
+// operation is running the camera slowly orbits the car instead, so the fill is
+// visible from a moving angle.
 static void UpdateServiceCamera(float dt) {
     if (!s_serviceCamLocked) return;
     TheCamera.m_nCarZoom = s_servicePrevCarZoom;
+
+    if (s_serviceOp == SERVICE_OP_NONE) return;
+
+    // Slow orbit around the vehicle, facing it. Zoomed out a little further than
+    // the pump stand-off so the whole car is in frame.
+    CPlayerPed* player = FindPlayerPed(0);
+    if (!player) return;
+    CVehicle* veh = GetStablePlayerVehicle(player);
+    if (!veh) return;
+
+    s_serviceOrbitAngle += dt * 0.12f;   // ~52 degrees per second at 60fps
+    if (s_serviceOrbitAngle > 2.0f * kPi) s_serviceOrbitAngle -= 2.0f * kPi;
+
+    CVector carPos = veh->GetPosition();
+    const float orbitRadius = 7.0f;
+    const float orbitHeight = 1.6f;
+
+    CVector source(carPos.x + sinf(s_serviceOrbitAngle) * orbitRadius,
+                   carPos.y + cosf(s_serviceOrbitAngle) * orbitRadius,
+                   carPos.z + orbitHeight);
+
+    // Look at the car, not the pump, while the fill runs.
+    s_serviceCamLookAt = carPos + CVector(0.0f, 0.0f, 0.5f);
+    TheCamera.SetCamPositionForFixedMode(&source, &kServiceCamUp);
 }
 
 // Hands the camera back through the game's own state machine, which clears the
@@ -697,7 +727,7 @@ void Radar::UpdateFuelServices() {
     CObject* pump = nullptr;
     CVector pumpPos(0.0f, 0.0f, 0.0f);
     if (eligible) {
-        pump = FindNearestPump(veh->GetPosition(), 2.5f);
+        pump = FindNearestPump(veh->GetPosition(), g_config.refuelRadius);
         if (pump) pumpPos = pump->GetPosition();
     }
 
@@ -715,8 +745,10 @@ void Radar::UpdateFuelServices() {
     if (dt <= 0.0f || dt > 0.1f) dt = 0.0166f;
 
     bool selectKey = g_config.serviceSelectKey > 0 && (GetAsyncKeyState(g_config.serviceSelectKey) & 0x8000) != 0;
-    bool upKey     = g_config.serviceUpKey > 0 && (GetAsyncKeyState(g_config.serviceUpKey) & 0x8000) != 0;
-    bool downKey   = g_config.serviceDownKey > 0 && (GetAsyncKeyState(g_config.serviceDownKey) & 0x8000) != 0;
+    bool upKey     = (g_config.serviceUpKey > 0 && (GetAsyncKeyState(g_config.serviceUpKey) & 0x8000) != 0)
+                  || (GetAsyncKeyState('W') & 0x8000) != 0;
+    bool downKey   = (g_config.serviceDownKey > 0 && (GetAsyncKeyState(g_config.serviceDownKey) & 0x8000) != 0)
+                  || (GetAsyncKeyState('S') & 0x8000) != 0;
     bool backKey   = g_config.serviceBackKey > 0 && (GetAsyncKeyState(g_config.serviceBackKey) & 0x8000) != 0;
     bool holdKey   = g_config.serviceKey > 0 && (GetAsyncKeyState(g_config.serviceKey) & 0x8000) != 0;
 
@@ -784,6 +816,32 @@ void Radar::UpdateFuelServices() {
 
     // Menu is open: keep the prompt fully opaque and drive the list.
     s_servicePromptAlpha = 1.0f;
+
+    // A running operation owns the row input until it finishes.
+    if (s_serviceOp != SERVICE_OP_NONE) {
+        s_serviceOpTimer += dt;
+        float t = (s_serviceOpDuration > 0.0f) ? Clampf(s_serviceOpTimer / s_serviceOpDuration, 0.0f, 1.0f) : 1.0f;
+
+        VehicleFuelExt& opExt = s_vehicleFuelExt.Get(veh);
+        if (s_serviceOp == SERVICE_OP_REFUEL) {
+            opExt.fuelLevel = Lerpf(s_serviceOpFromValue, 1.0f, t);
+            s_vehFuel = opExt.fuelLevel;
+        } else {
+            veh->m_fHealth = Lerpf(s_serviceOpFromValue, 1000.0f, t);
+            if (t >= 1.0f) veh->Fix();
+        }
+
+        if (t >= 1.0f) {
+            s_serviceOp = SERVICE_OP_NONE;
+            s_serviceOpTimer = 0.0f;
+            // Return to the static pump view once the fill is done.
+            TheCamera.SetCamPositionForFixedMode(&s_serviceCamToPos, &kServiceCamUp);
+        }
+        s_serviceLastSelect = selectDown;
+        s_serviceLastBack = backDown;
+        return;
+    }
+
     if (upDown && !s_serviceLastUp)     s_serviceRow = (s_serviceRow + SERVICE_ROW_COUNT - 1) % SERVICE_ROW_COUNT;
     if (downDown && !s_serviceLastDown) s_serviceRow = (s_serviceRow + 1) % SERVICE_ROW_COUNT;
     s_serviceLastUp = upDown;
@@ -799,20 +857,26 @@ void Radar::UpdateFuelServices() {
             int price = RefuelPrice(pumpPos, ext.fuelLevel);
             if (price > 0 && CWorld::Players[0].m_nMoney >= price) {
                 CWorld::Players[0].m_nMoney -= price;
-                s_vehFuel = 1.0f;
-                ext.fuelLevel = 1.0f;
-                LogWrite("fuel: refuelled for $%d", price);
+                // Timed fill: 0.5s per 1% of tank, configurable.
+                s_serviceOp = SERVICE_OP_REFUEL;
+                s_serviceOpFromValue = ext.fuelLevel;
+                s_serviceOpDuration = (1.0f - ext.fuelLevel) * 100.0f * g_config.refuelDurationPerPct;
+                s_serviceOpTimer = 0.0f;
+                s_serviceOrbitAngle = 0.0f;
+                LogWrite("fuel: refuelling for $%d over %.1fs", price, s_serviceOpDuration);
             }
         } else {
             int price = RepairPrice(veh);
             if (NeedsRepair(veh) && CWorld::Players[0].m_nMoney >= price) {
                 CWorld::Players[0].m_nMoney -= price;
-                // Fix() restores panels, doors, lights, tyres and engine status via
-                // the vtable, but it never writes m_fHealth - that is what the engine
-                // gauge reads. The vanilla shop sets it explicitly afterwards.
-                veh->Fix();
-                veh->m_fHealth = 1000.0f;
-                LogWrite("fuel: repaired for $%d", price);
+                // Timed repair: 1s per 10% of health, configurable.
+                float missing = Clampf((1000.0f - veh->m_fHealth) / 100.0f, 0.0f, 10.0f);
+                s_serviceOp = SERVICE_OP_REPAIR;
+                s_serviceOpFromValue = veh->m_fHealth;
+                s_serviceOpDuration = missing * g_config.repairDurationPer10Pct;
+                s_serviceOpTimer = 0.0f;
+                s_serviceOrbitAngle = 0.0f;
+                LogWrite("fuel: repairing for $%d over %.1fs", price, s_serviceOpDuration);
             }
         }
     }

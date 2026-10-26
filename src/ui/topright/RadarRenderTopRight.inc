@@ -310,7 +310,8 @@ static void DrawTopRightHUD(float masterAlpha) {
         }
 
         bool isInterior = (CGame::currArea > 0) || (player->m_nAreaCode > 0);
-        bool showMoney = g_config.alwaysShowMoney || isInterior || g_hudShowAll || (s_moneyIdleTimer > 0.0f);
+        // The services menu spends money, so keep the counter on screen while it is open.
+        bool showMoney = g_config.alwaysShowMoney || s_serviceOpen || isInterior || g_hudShowAll || (s_moneyIdleTimer > 0.0f);
 
         if (showMoney) {
             s_moneyFadeAlpha = std::min(1.0f, s_moneyFadeAlpha + dt / 0.25f);
@@ -351,6 +352,7 @@ static void DrawTopRightHUD(float masterAlpha) {
 
             float gaugeRad = 15.0f * (sH / 720.0f);
             float gaugeTrackW = 2.5f * (sH / 720.0f);
+            float gaugeGap = gaugeTrackW * 0.7f;
             float iconSize = (gaugeRad - gaugeTrackW) * 2.0f * 0.70f;
 
             float gx = moneyRightEdge - gaugeRad;
@@ -362,7 +364,7 @@ static void DrawTopRightHUD(float masterAlpha) {
 
             // Track ring
             CRGBA trackCol(40, 40, 45, (unsigned char)(180.0f * currentMoneyAlpha));
-            DrawArcStrip(gx, gy, gaugeRad - gaugeTrackW, gaugeRad, 0.0f, 2.0f * kPi, trackCol, 48);
+            DrawArcStrip(gx, gy, gaugeRad - gaugeTrackW - gaugeGap, gaugeRad - gaugeGap, 0.0f, 2.0f * kPi, trackCol, 48);
 
             // Value arc
             float ratio = s_renderMoney / 999999999.0f;
@@ -373,7 +375,7 @@ static void DrawTopRightHUD(float masterAlpha) {
                 float startAngle = -kPi * 0.5f;
                 float endAngle = startAngle + ratio * 2.0f * kPi;
                 CRGBA gaugeValCol = ModColor(g_config.moneyGaugeColor, currentMoneyAlpha);
-                DrawArcStrip(gx, gy, gaugeRad - gaugeTrackW, gaugeRad, startAngle, endAngle, gaugeValCol, 48);
+                DrawArcStrip(gx, gy, gaugeRad - gaugeTrackW - gaugeGap, gaugeRad - gaugeGap, startAngle, endAngle, gaugeValCol, 48);
             }
 
             // Wallet icon in gauge center

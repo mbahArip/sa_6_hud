@@ -249,8 +249,9 @@ void Radar::DrawInfoCards(const CRect& rect, float alpha) {
         float statsCenterY = splitY + (cardBottom - splitY) * 0.5f;
         float gaugeRad = 11.75f * (sH / 720.0f) * g_config.gaugeScale * cardScale;
         float gaugeTrackW = 1.6f * (sH / 720.0f) * g_config.gaugeScale * cardScale;
+        float gaugeGap = gaugeTrackW * 0.7f;
         float iconSize = (gaugeRad - gaugeTrackW) * 2.0f * 0.675f;
-        float midRad = gaugeRad - gaugeTrackW * 0.5f;
+        float midRad = gaugeRad - gaugeTrackW * 0.5f - gaugeGap;
         float capRad = gaugeTrackW * 0.5f;
 
         for (int i = 0; i < GAUGE_COUNT; ++i) {
@@ -266,7 +267,7 @@ void Radar::DrawInfoCards(const CRect& rect, float alpha) {
 
             // Background track ring
             CRGBA trackCol(60, 68, 80, (unsigned char)(140 * gAlpha));
-            DrawArcStrip(gx, gy, gaugeRad - gaugeTrackW, gaugeRad, 0.0f, 2.0f * kPi, trackCol, 48);
+            DrawArcStrip(gx, gy, gaugeRad - gaugeTrackW - gaugeGap, gaugeRad - gaugeGap, 0.0f, 2.0f * kPi, trackCol, 48);
 
             // Active progress arc with circular end-caps
             float val = s_gaugeSlots[i].curValue;
@@ -274,7 +275,7 @@ void Radar::DrawInfoCards(const CRect& rect, float alpha) {
                 float startAngle = -kPi * 0.5f;
                 float endAngle = startAngle + (2.0f * kPi * Clampf(val, 0.0f, 1.0f));
                 CRGBA arcCol = ModColor(s_gaugeSlots[i].color, gAlpha);
-                DrawArcStrip(gx, gy, gaugeRad - gaugeTrackW, gaugeRad, startAngle, endAngle, arcCol, 48);
+                DrawArcStrip(gx, gy, gaugeRad - gaugeTrackW - gaugeGap, gaugeRad - gaugeGap, startAngle, endAngle, arcCol, 48);
 
                 // Circular start cap at 12 o'clock
                 float startCapX = gx + midRad * cosf(startAngle);

@@ -700,6 +700,9 @@ void LoadConfig() {
     g_config.repairPriceMin        = readFloat("Minimap.Extension.VehicleFuel", "REPAIR_PRICE_MIN", 10.0f);
     g_config.repairPriceMax        = readFloat("Minimap.Extension.VehicleFuel", "REPAIR_PRICE_MAX", 400.0f);
     g_config.cheatRefillFuel       = readInt("Minimap.Extension.VehicleFuel", "CHEAT_REFILL_FUEL", 0) != 0;
+    g_config.refuelDurationPerPct  = readFloat("Minimap.Extension.VehicleFuel", "REFUEL_DURATION_PER_PCT", 0.50f);
+    g_config.repairDurationPer10Pct = readFloat("Minimap.Extension.VehicleFuel", "REPAIR_DURATION_PER_10PCT", 1.00f);
+    g_config.refuelRadius          = readFloat("Minimap.Extension.VehicleFuel", "REFUEL_RADIUS", 4.0f);
 
     // [KEYS] Gas pump services menu. An empty value falls back to the defaults in
     // Config.h, which mirror the vanilla garage keys (SPACE select, F/ENTER back).
@@ -1229,6 +1232,9 @@ void SaveConfig() {
     writeFloat("Minimap.Extension.VehicleFuel", "REPAIR_PRICE_MIN", g_config.repairPriceMin, "%.2f");
     writeFloat("Minimap.Extension.VehicleFuel", "REPAIR_PRICE_MAX", g_config.repairPriceMax, "%.2f");
     writeInt("Minimap.Extension.VehicleFuel", "CHEAT_REFILL_FUEL", g_config.cheatRefillFuel ? 1 : 0);
+    writeFloat("Minimap.Extension.VehicleFuel", "REFUEL_DURATION_PER_PCT", g_config.refuelDurationPerPct, "%.2f");
+    writeFloat("Minimap.Extension.VehicleFuel", "REPAIR_DURATION_PER_10PCT", g_config.repairDurationPer10Pct, "%.2f");
+    writeFloat("Minimap.Extension.VehicleFuel", "REFUEL_RADIUS", g_config.refuelRadius, "%.2f");
 
     // [Wanted.Visual]
     writeInt("Wanted.Visual", "USE_WANTED_STAR", g_config.useWantedStar ? 1 : 0);
