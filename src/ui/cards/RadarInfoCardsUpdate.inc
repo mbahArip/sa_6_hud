@@ -596,11 +596,18 @@ static void BeginServiceCamera(const CVector& vehPos, const CVector& pumpPos) {
         }
     }
 
-    // Eye-line slightly above the car's own height, closer in for the zoom.
-    s_serviceCamToPos   = pumpPos + awayFromPump * 4.5f + CVector(0.0f, 0.0f, (vehPos.z - pumpPos.z) + 1.1f);
-    s_serviceCamLookAt  = pumpPos + CVector(0.0f, 0.0f, 0.8f);
+    // Close stand-off so the view stays inside the radius the game already streamed
+    // around the player, and a flat aim so the pump lands at screen centre.
+    s_serviceCamToPos   = pumpPos + awayFromPump * 2.0f + CVector(0.0f, 0.0f, (vehPos.z - pumpPos.z) + 1.1f);
+    s_serviceCamLookAt  = pumpPos + CVector(0.0f, 0.0f, 0.2f);
     s_serviceCamBlend   = 0.0f;
     s_serviceCamLocked  = true;
+
+    // One-shot, not per-frame: streaming reads from disk, so calling this every tick
+    // injects a hitch each frame and turns the glide into a stutter. A single request
+    // at open is enough to queue the geometry around the pump.
+    CVector target = s_serviceCamToPos;
+    CStreaming::RequestBigBuildings(&target);
 
     // Suppress the camera-cycle key for the duration. m_bPlayerIsInGarage alone does
     // not stop it, so the mode/zoom are snapshotted here and forced back every frame
@@ -672,16 +679,6 @@ static void UpdateServiceCamera(float dt) {
     // Pin the camera mode/zoom so the cycle key cannot leave the locked view.
     TheCamera.m_nCarZoom = s_servicePrevCarZoom;
     TheCamera.m_aCams[TheCamera.m_nActiveCam].m_nMode = s_servicePrevCamMode;
-
-    // Streaming decides what to load from the camera frustum, and that decision is
-    // made in CStreaming::Update/CCamera::Process - both of which run BEFORE this
-    // event. Without a nudge the ground we just turned to face stays at low LOD or
-    // unloaded. Asking for the big buildings around the new camera origin each frame
-    // keeps the visible side populated.
-    if (s_serviceCamBlend < 1.0f) {
-        CVector camPos = cam.pos;
-        CStreaming::RequestBigBuildings(&camPos);
-    }
 }
 
 // Holds the whole game still while the list is open.
