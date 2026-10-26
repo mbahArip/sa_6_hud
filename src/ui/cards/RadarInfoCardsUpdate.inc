@@ -571,184 +571,81 @@ static void ReleaseServiceControlBits() {
     pad->bDisablePlayerCycleWeapon = 0;
 }
 
-// Builds the dolly target: a camera placed on the player->pump line, looking
-// straight at the pump so it lands dead-centre regardless of how the car is parked.
+// Takes over the game's own camera by switching the active cam to MODE_FIXED and
+// gliding its source. CCamera::Process then builds the matrix, the frustum and the
+// streaming decisions from this state, so culling and streaming agree with what is
+// rendered - no matrix overwriting, no streaming band-aids.
 static void BeginServiceCamera(const CVector& vehPos, const CVector& pumpPos) {
-    s_serviceStartCamMatrix = TheCamera.m_mCameraMatrix;
-
     // Direction from the pump back toward the car, flattened. The camera sits on
-    // this line, so the pump stays centred no matter the car's heading.
+    // this line, so the pump stays centred no matter how the car is parked.
     CVector awayFromPump = vehPos - pumpPos;
     awayFromPump.z = 0.0f;
     if (awayFromPump.Magnitude2D() < 0.5f) awayFromPump = CVector(0.0f, 1.0f, 0.0f);
     awayFromPump = awayFromPump.Normalized();
 
     // Start from the origin the renderer is actually using, not the staging matrix.
-    // Blending from a stale origin is what made the first frames jump.
-    s_serviceCamFromPos = s_serviceStartCamMatrix.pos;
+    CVector fromPos = TheCamera.m_mCameraMatrix.pos;
     RwCamera* rwCam = TheCamera.m_pRwCamera;
     if (!rwCam) rwCam = Scene.m_pCamera;
     if (rwCam) {
         RwFrame* frame = RwCameraGetFrame(rwCam);
         if (frame) {
             const RwMatrix* m = RwFrameGetMatrix(frame);
-            s_serviceCamFromPos = CVector(m->pos.x, m->pos.y, m->pos.z);
+            fromPos = CVector(m->pos.x, m->pos.y, m->pos.z);
         }
     }
 
-    // Close stand-off so the view stays inside the radius the game already streamed
-    // around the player, and a flat aim so the pump lands at screen centre.
+    s_serviceCamFromPos = fromPos;
     s_serviceCamToPos   = pumpPos + awayFromPump * 5.0f + CVector(0.0f, 0.0f, (vehPos.z - pumpPos.z) + 0.5f);
     s_serviceCamLookAt  = pumpPos + CVector(0.0f, 0.0f, -0.15f);
     s_serviceCamBlend   = 0.0f;
     s_serviceCamLocked  = true;
-    s_serviceCamExiting = false;
 
-    // Load the whole scene around the pump, not just the big-building LODs. The
-    // camera is about to face a direction the game never streamed for, so requesting
-    // only RequestBigBuildings leaves the mid and small geometry missing. LoadScene
-    // is what the game itself uses on a teleport: one blocking load, once, at open.
+    // Hand the camera to the game. From here CCamera::Process owns the transform.
+    CCam& activeCam = TheCamera.m_aCams[TheCamera.m_nActiveCam];
+    s_servicePrevCamMode = activeCam.m_nMode;
+    activeCam.m_vecCamFixedModeSource  = fromPos;
+    activeCam.m_vecCamFixedModeVector  = s_serviceCamLookAt;
+    activeCam.m_vecCamFixedModeUpOffSet = CVector(0.0f, 0.0f, 1.0f);
+    activeCam.m_nMode = MODE_FIXED;
+
+    // Load the scene around the pump once, since the fixed camera is about to look
+    // in a direction the game never streamed for.
     CStreaming::LoadScene(&pumpPos);
-    s_serviceStreamTick = 0;
 
-    // Suppress the camera-cycle key for the duration. m_bPlayerIsInGarage alone does
-    // not stop it, so the mode/zoom are snapshotted here and forced back every frame
-    // in UpdateServiceCamera - the camera simply cannot stay in another mode.
+    // Suppress the camera-cycle key for the duration.
     s_servicePrevInGarage = TheCamera.m_bPlayerIsInGarage;
     TheCamera.m_bPlayerIsInGarage = true;
-    s_servicePrevCarZoom  = TheCamera.m_nCarZoom;
-    s_servicePrevCamMode  = TheCamera.m_aCams[TheCamera.m_nActiveCam].m_nMode;
+    s_servicePrevCarZoom = TheCamera.m_nCarZoom;
 }
 
-// Writes the blended camera transform. Called after CCamera::Process has run, so
-// the value survives to render.
+// Glides the fixed camera's source toward the pump. No matrix writes: the game
+// builds everything from this state, so streaming and culling stay correct.
 static void UpdateServiceCamera(float dt) {
     if (!s_serviceCamLocked) return;
-
-    // Exit glide: dolly straight back along the view axis rather than lerping toward
-    // the game camera. Translating toward the game cam made the whole view slide
-    // sideways ("glide top"); backing out on the view axis reads as a zoom-out.
-    if (s_serviceCamExiting) {
-        s_serviceCamExitBlend = std::min(1.0f, s_serviceCamExitBlend + dt / kServiceCamExitSeconds);
-        float e = s_serviceCamExitBlend;
-        float et = e * e * (3.0f - 2.0f * e);
-
-        CVector pos = s_serviceCamToPos - s_serviceCamExitAt * (et * 5.0f);
-        CVector at  = s_serviceCamExitAt;
-
-        CVector right = CVector(0.0f, 0.0f, 1.0f).Cross(at);
-        if (right.Magnitude() < 0.01f) right = CVector(1.0f, 0.0f, 0.0f);
-        right = right.Normalized();
-
-        CMatrix& exitMatrix = TheCamera.m_mCameraMatrix;
-        exitMatrix.pos   = pos;
-        exitMatrix.right = right;
-        exitMatrix.up    = at.Cross(right).Normalized();
-        exitMatrix.at    = at;
-
-        RwCamera* exitCam = TheCamera.m_pRwCamera;
-        if (!exitCam) exitCam = Scene.m_pCamera;
-        if (exitCam) {
-            RwFrame* frame = RwCameraGetFrame(exitCam);
-            if (frame) {
-                RwMatrix* m = RwFrameGetMatrix(frame);
-                m->right.x = right.x;        m->right.y = right.y;        m->right.z = right.z;
-                m->up.x    = exitMatrix.up.x; m->up.y   = exitMatrix.up.y; m->up.z   = exitMatrix.up.z;
-                m->at.x    = at.x;            m->at.y    = at.y;           m->at.z    = at.z;
-                m->pos.x   = pos.x;           m->pos.y   = pos.y;          m->pos.z   = pos.z;
-                RwFrameUpdateObjects(frame);
-            }
-        }
-
-        if (s_serviceCamExitBlend >= 1.0f) {
-            s_serviceCamExiting = false;
-            s_serviceCamLocked  = false;
-        }
-        return;
-    }
 
     if (s_serviceCamBlend < 1.0f) {
         s_serviceCamBlend = std::min(1.0f, s_serviceCamBlend + dt / kServiceCamBlendSeconds);
     }
-    // Smoothstep: zero velocity at both ends, so the move starts and stops gently
-    // instead of the jerk an ease-out cubic gives on the first frame.
+    // Smoothstep: zero velocity at both ends, so the move starts and stops gently.
     float t = s_serviceCamBlend * s_serviceCamBlend * (3.0f - 2.0f * s_serviceCamBlend);
 
-    CMatrix& cam = TheCamera.m_mCameraMatrix;
-    cam.pos = LerpVec(s_serviceCamFromPos, s_serviceCamToPos, t);
-
-    // `at` must point from the camera toward what it looks at. The renderer views
-    // along +at, so building it as pos - lookAt aimed the camera away from the pump
-    // and showed the hidden side of the map.
-    CVector at = s_serviceCamLookAt - cam.pos;
-    if (at.Magnitude() < 0.01f) at = CVector(0.0f, 1.0f, 0.0f);
-    at = at.Normalized();
-
-    // right = worldUp x at, up = at x right. Verified det = +1 on a concrete case:
-    // at=(0,1,0), worldUp=(0,0,1) gives right=(-1,0,0), up=(0,0,1), det=+1. The
-    // opposite cross order yields det = -1, a reflection that mirrors left/right and
-    // inverts backface winding.
-    CVector right = CVector(0.0f, 0.0f, 1.0f).Cross(at);
-    if (right.Magnitude() < 0.01f) right = CVector(1.0f, 0.0f, 0.0f);
-    right = right.Normalized();
-
-    cam.right = right;
-    cam.up    = at.Cross(right).Normalized();
-    cam.at    = at;
-
-    // m_mCameraMatrix is a game-logic cache, not the render path. Writing it only
-    // affects passes that derive from it - the reflection and lighting rebuild
-    // their matrices from this, which is why they moved while the view did not.
-    cam.UpdateRW();
-    TheCamera.m_mCameraMatrixOld = cam;
-
-    // The rendered view comes from the RwCamera's frame LTM, which RwCameraBeginUpdate
-    // recomputes every frame. Push the same basis into that frame so the picture
-    // actually follows. Writing here is safe because gameProcessEvent runs after
-    // CCamera::Process, so nothing overwrites it before this frame is drawn.
-    RwCamera* rwCam = TheCamera.m_pRwCamera;
-    if (!rwCam) rwCam = Scene.m_pCamera;
-    if (rwCam) {
-        RwFrame* frame = RwCameraGetFrame(rwCam);
-        if (frame) {
-            RwMatrix* m = RwFrameGetMatrix(frame);
-            m->right.x = right.x; m->right.y = right.y; m->right.z = right.z;
-            m->up.x    = cam.up.x; m->up.y    = cam.up.y; m->up.z    = cam.up.z;
-            m->at.x    = at.x;     m->at.y    = at.y;     m->at.z    = at.z;
-            m->pos.x   = cam.pos.x; m->pos.y  = cam.pos.y; m->pos.z = cam.pos.z;
-            RwFrameUpdateObjects(frame);
-        }
-    }
-
-    // Pin the camera mode/zoom so the cycle key cannot leave the locked view.
+    CCam& activeCam = TheCamera.m_aCams[TheCamera.m_nActiveCam];
+    activeCam.m_vecCamFixedModeSource   = LerpVec(s_serviceCamFromPos, s_serviceCamToPos, t);
+    activeCam.m_vecCamFixedModeVector   = s_serviceCamLookAt;
+    activeCam.m_vecCamFixedModeUpOffSet = CVector(0.0f, 0.0f, 1.0f);
+    // Keep re-asserting the mode: the game resets it during its own camera pass.
+    activeCam.m_nMode = MODE_FIXED;
     TheCamera.m_nCarZoom = s_servicePrevCarZoom;
+}
+
+// Hands the camera back. CCamera sees a mode change and runs its own transition,
+// so the return is smooth without us interpolating anything.
+static void EndServiceCamera() {
+    if (!s_serviceCamLocked) return;
+    s_serviceCamLocked = false;
     TheCamera.m_aCams[TheCamera.m_nActiveCam].m_nMode = s_servicePrevCamMode;
-
-    // Culling and streaming both decide against frustum planes computed in
-    // CCamera::Process, which already ran this frame. Rewriting only the RwCamera
-    // frame leaves those systems looking at the OLD view, so geometry we turn to
-    // face is never loaded or drawn. Feed the new transform into the game camera
-    // state and recompute the planes, so culling matches what is rendered.
-    TheCamera.m_vecGameCamPos = cam.pos;
-    TheCamera.CalculateFrustumPlanes(false);
-
-    // Remember where we ended up, so the exit glide has a starting point.
-    s_serviceCamExitAt = cam.at;
-
-    // Stream a wide radius around the PLAYER, not the pump. DeleteRwObjectsBehindCamera
-    // strips high-detail render objects that sit outside the camera frustum, and it
-    // ran against the old view, so the side we just turned to face has been stripped.
-    // Re-requesting the big buildings around the player puts them back. Throttled:
-    // streaming hits disk, and doing it every frame is what caused the stutter.
-    if (++s_serviceStreamTick >= 4) {
-        s_serviceStreamTick = 0;
-        CPlayerPed* streamPed = FindPlayerPed(0);
-        if (streamPed) {
-            CVector streamPos = streamPed->GetPosition();
-            CStreaming::RequestBigBuildings(&streamPos);
-            CStreaming::StreamVehiclesAndPeds_Always(&streamPos);
-        }
-    }
+    TheCamera.m_bPlayerIsInGarage = s_servicePrevInGarage;
 }
 
 // Holds the whole game still while the list is open.
@@ -828,9 +725,7 @@ void Radar::UpdateFuelServices() {
     // control immediately.
     if (s_serviceOpen && (wanted || !eligible || !pump)) {
         s_serviceOpen = false;
-        s_serviceCamExiting = s_serviceCamLocked;
-        s_serviceCamExitBlend = 0.0f;
-        TheCamera.m_bPlayerIsInGarage = s_servicePrevInGarage;
+        EndServiceCamera();
     }
 
     float dt = CTimer::ms_fTimeStep * 0.02f;
@@ -861,8 +756,6 @@ void Radar::UpdateFuelServices() {
     // Freeze only after the pad has been sampled above, otherwise clearing the
     // input state would also swallow the menu's own navigation.
     if (s_serviceOpen) FreezeServiceInput(veh, dt);
-    // Keep driving the camera through the exit glide, after the menu has closed.
-    else if (s_serviceCamExiting) UpdateServiceCamera(dt);
 
     if (!s_serviceOpen) {
         // One frame of grace after closing: the key that dismissed the menu must not
@@ -915,9 +808,7 @@ void Radar::UpdateFuelServices() {
 
     if (backDown && !s_serviceLastBack) {
         s_serviceOpen = false;
-        s_serviceCamExiting = true;
-        s_serviceCamExitBlend = 0.0f;
-        TheCamera.m_bPlayerIsInGarage = s_servicePrevInGarage;
+        EndServiceCamera();
         s_serviceSuppressFrames = 2;
     } else if (selectDown && !s_serviceLastSelect) {
         VehicleFuelExt& ext = s_vehicleFuelExt.Get(veh);
