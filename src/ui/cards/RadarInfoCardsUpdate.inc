@@ -603,32 +603,22 @@ static void BeginServiceCamera(const CVector& vehPos, const CVector& pumpPos) { 
     s_serviceCamBlend   = 0.0f;
     s_serviceCamLocked  = true;
 
-    // Enter the game's scripted fixed camera. Writing m_nMode directly does nothing:
-    // CCamera::Process picks its cam code from m_nWhoIsInControlOfTheCamera and
-    // m_nModeToGoTo, so without TakeControlNoEntity the fixed-cam path never runs and
-    // the view stays on behind-car. That is why exit worked (it just restored the old
-    // mode) while entering did not.
-    TheCamera.TakeControlNoEntity(&s_serviceCamLookAt, 2, 1);
-    TheCamera.SetCamPositionForFixedMode(&fromPos, &kServiceCamUp);
+    // SWITCHTYPE_INTERPOLATION (1) makes the game glide from the current camera to
+    // the fixed one. Passing 2 (JUMPCUT) snapped instantly, which is what was
+    // reported. Letting the game interpolate also means we must NOT lerp the source
+    // ourselves - two interpolations fighting produced a stutter.
+    TheCamera.TakeControlNoEntity(&s_serviceCamLookAt, SWITCHTYPE_INTERPOLATION, 1);
+    TheCamera.SetCamPositionForFixedMode(&s_serviceCamToPos, &kServiceCamUp);
 
     s_servicePrevInGarage = TheCamera.m_bPlayerIsInGarage;
     TheCamera.m_bPlayerIsInGarage = true;
     s_servicePrevCarZoom = TheCamera.m_nCarZoom;
 }
 
-// Glides the fixed camera's source toward the pump. No matrix writes: the game
-// builds everything from this state, so streaming and culling stay correct.
+// Keeps the target pinned while the game runs its own transition. No source lerp:
+// CCamera interpolates the glide itself.
 static void UpdateServiceCamera(float dt) {
     if (!s_serviceCamLocked) return;
-
-    if (s_serviceCamBlend < 1.0f) {
-        s_serviceCamBlend = std::min(1.0f, s_serviceCamBlend + dt / kServiceCamBlendSeconds);
-    }
-    // Smoothstep: zero velocity at both ends, so the move starts and stops gently.
-    float t = s_serviceCamBlend * s_serviceCamBlend * (3.0f - 2.0f * s_serviceCamBlend);
-
-    CVector source = LerpVec(s_serviceCamFromPos, s_serviceCamToPos, t);
-    TheCamera.SetCamPositionForFixedMode(&source, &kServiceCamUp);
     TheCamera.m_nCarZoom = s_servicePrevCarZoom;
 }
 
