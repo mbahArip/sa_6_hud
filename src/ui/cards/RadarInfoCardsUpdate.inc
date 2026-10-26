@@ -614,22 +614,22 @@ static void UpdateServiceCamera(float dt) {
     CMatrix& cam = TheCamera.m_mCameraMatrix;
     cam.pos = LerpVec(s_serviceCamFromPos, s_serviceCamToPos, t);
 
-    // San Andreas stores `at` pointing BACKWARD from the camera, not along the view
-    // direction.
-    CVector at = cam.pos - s_serviceCamLookAt;
-    if (at.Magnitude() < 0.01f) at = CVector(0.0f, -1.0f, 0.0f);
+    // `at` must point from the camera toward what it looks at. The renderer views
+    // along +at, so building it as pos - lookAt aimed the camera away from the pump
+    // and showed the hidden side of the map.
+    CVector at = s_serviceCamLookAt - cam.pos;
+    if (at.Magnitude() < 0.01f) at = CVector(0.0f, 1.0f, 0.0f);
     at = at.Normalized();
 
-    // right = worldUp x at. With `at` pointing backward, the other order yields a
-    // negative determinant: a reflection that swaps left/right and inverts backface
-    // winding, so models look inside-out.
+    // right = worldUp x at, up = at x right. Verified det = +1 on a concrete case:
+    // at=(0,1,0), worldUp=(0,0,1) gives right=(-1,0,0), up=(0,0,1), det=+1. The
+    // opposite cross order yields det = -1, a reflection that mirrors left/right and
+    // inverts backface winding.
     CVector right = CVector(0.0f, 0.0f, 1.0f).Cross(at);
     if (right.Magnitude() < 0.01f) right = CVector(1.0f, 0.0f, 0.0f);
     right = right.Normalized();
 
     cam.right = right;
-    // up = at x right, which is the partner that keeps det = +1. right x at gives a
-    // negated up and rolls the image 180 degrees.
     cam.up    = at.Cross(right).Normalized();
     cam.at    = at;
 
