@@ -583,10 +583,22 @@ static void BeginServiceCamera(const CVector& vehPos, const CVector& pumpPos) {
     if (awayFromPump.Magnitude2D() < 0.5f) awayFromPump = CVector(0.0f, 1.0f, 0.0f);
     awayFromPump = awayFromPump.Normalized();
 
-    // Stand off far enough to frame the pump plus the car, at roughly body height.
+    // Start from the origin the renderer is actually using, not the staging matrix.
+    // Blending from a stale origin is what made the first frames jump.
     s_serviceCamFromPos = s_serviceStartCamMatrix.pos;
-    s_serviceCamToPos   = pumpPos + awayFromPump * 7.0f + CVector(0.0f, 0.0f, 1.5f);
-    s_serviceCamLookAt  = pumpPos + CVector(0.0f, 0.0f, 0.6f);
+    RwCamera* rwCam = TheCamera.m_pRwCamera;
+    if (!rwCam) rwCam = Scene.m_pCamera;
+    if (rwCam) {
+        RwFrame* frame = RwCameraGetFrame(rwCam);
+        if (frame) {
+            const RwMatrix* m = RwFrameGetMatrix(frame);
+            s_serviceCamFromPos = CVector(m->pos.x, m->pos.y, m->pos.z);
+        }
+    }
+
+    // Flat eye-line at the car's own height, closer in for the zoom.
+    s_serviceCamToPos   = pumpPos + awayFromPump * 4.5f + CVector(0.0f, 0.0f, vehPos.z - pumpPos.z);
+    s_serviceCamLookAt  = pumpPos + CVector(0.0f, 0.0f, 0.4f);
     s_serviceCamBlend   = 0.0f;
     s_serviceCamLocked  = true;
 
@@ -607,9 +619,9 @@ static void UpdateServiceCamera(float dt) {
     if (s_serviceCamBlend < 1.0f) {
         s_serviceCamBlend = std::min(1.0f, s_serviceCamBlend + dt / kServiceCamBlendSeconds);
     }
-    // Ease-out cubic so the dolly settles instead of stopping dead.
-    float inv = 1.0f - s_serviceCamBlend;
-    float t = 1.0f - inv * inv * inv;
+    // Smoothstep: zero velocity at both ends, so the move starts and stops gently
+    // instead of the jerk an ease-out cubic gives on the first frame.
+    float t = s_serviceCamBlend * s_serviceCamBlend * (3.0f - 2.0f * s_serviceCamBlend);
 
     CMatrix& cam = TheCamera.m_mCameraMatrix;
     cam.pos = LerpVec(s_serviceCamFromPos, s_serviceCamToPos, t);
@@ -660,6 +672,16 @@ static void UpdateServiceCamera(float dt) {
     // Pin the camera mode/zoom so the cycle key cannot leave the locked view.
     TheCamera.m_nCarZoom = s_servicePrevCarZoom;
     TheCamera.m_aCams[TheCamera.m_nActiveCam].m_nMode = s_servicePrevCamMode;
+
+    // Streaming decides what to load from the camera frustum, and that decision is
+    // made in CStreaming::Update/CCamera::Process - both of which run BEFORE this
+    // event. Without a nudge the ground we just turned to face stays at low LOD or
+    // unloaded. Asking for the big buildings around the new camera origin each frame
+    // keeps the visible side populated.
+    if (s_serviceCamBlend < 1.0f) {
+        CVector camPos = cam.pos;
+        CStreaming::RequestBigBuildings(&camPos);
+    }
 }
 
 // Holds the whole game still while the list is open.
