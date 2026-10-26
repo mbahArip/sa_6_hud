@@ -585,12 +585,15 @@ static void EnterPumpView() {
 }
 
 // Takes control aimed at the car so the game glides from the pump view into the
-// orbit. The per-frame DriveOrbit calls then keep it circling.
+// orbit. The FixedModeVector argument is a DIRECTION, not a look-at point.
 static void EnterOrbitView(const CVehicle* veh) {
     if (!veh) return;
     CVector carPos = veh->GetPosition();
     CVector lookAt = carPos + CVector(0.0f, 0.0f, 0.5f);
-    TheCamera.TakeControlNoEntity(&lookAt, SWITCHTYPE_INTERPOLATION, 1);
+    CVector dir = lookAt - s_serviceCamToPos;
+    if (dir.Magnitude() < 0.01f) dir = CVector(0.0f, 1.0f, 0.0f);
+    dir = dir.Normalized();
+    TheCamera.TakeControlNoEntity(&dir, SWITCHTYPE_INTERPOLATION, 1);
 }
 
 static void BeginServiceCamera(const CVector& vehPos, const CVector& pumpPos) {
@@ -614,12 +617,18 @@ static void BeginServiceCamera(const CVector& vehPos, const CVector& pumpPos) {
     s_servicePrevCarZoom = TheCamera.m_nCarZoom;
 }
 
-// Pushes the orbit source into the game camera. SetCamPositionForFixedMode only
-// moves the source, so the look-at vector must be written too - without it the
-// camera keeps staring at the pump and the orbit reads as static.
+// Pushes the orbit source into the game camera. m_vecCamFixedModeVector is a
+// DIRECTION, not a look-at point - writing world coordinates there normalises to
+// something near-vertical, which is why the orbit only tilted down a little instead
+// of circling. SetCamPositionForFixedMode moves the source; the direction is written
+// separately.
 static void DriveOrbit(const CVector& source, const CVector& lookAt) {
     TheCamera.SetCamPositionForFixedMode(&source, &kServiceCamUp);
-    TheCamera.m_aCams[TheCamera.m_nActiveCam].m_vecCamFixedModeVector = lookAt;
+
+    CVector dir = lookAt - source;
+    if (dir.Magnitude() < 0.01f) dir = CVector(0.0f, 1.0f, 0.0f);
+    dir = dir.Normalized();
+    TheCamera.m_aCams[TheCamera.m_nActiveCam].m_vecCamFixedModeVector = dir;
 }
 
 // Keeps the orbit running while an operation is active. Transitions in and out are
