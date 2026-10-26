@@ -171,7 +171,7 @@ struct Config {
     float  repairPriceMin           = 10.0f;                 // REPAIR_PRICE_MIN: cost at no damage
     float  repairPriceMax           = 400.0f;                // REPAIR_PRICE_MAX: cost at full damage
     bool   cheatRefillFuel          = false;                 // CHEAT_REFILL_FUEL: HESOYAM also fills the tank
-    float  refuelDurationPerPct     = 0.50f;                 // REFUEL_DURATION_PER_PCT: seconds per 1% of tank
+    float  refuelDurationPerPct     = 0.25f;                 // REFUEL_DURATION_PER_PCT: seconds per 1% of tank
     float  repairDurationPer10Pct   = 1.00f;                 // REPAIR_DURATION_PER_10PCT: seconds per 10% health
     float  refuelRadius             = 4.0f;                  // REFUEL_RADIUS: pump trigger distance in metres
 

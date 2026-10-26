@@ -293,7 +293,7 @@ void Radar::UpdateInfoCards() {
     s_gaugeSlots[GAUGE_WAYPOINT].color = g_config.gaugeWaypointColor;
 
     // G1: Engine Health (100% pristine condition; 0% engine catching fire <= 250.0f)
-    bool healthActive = g_config.showGaugeHealth && s_inVehicle;
+    bool healthActive = g_config.showGaugeHealth && s_inVehicle && s_serviceOp == SERVICE_OP_REPAIR;
     if (healthActive && veh) {
         float rawHp = veh->m_fHealth;
         float normHp = Clampf((rawHp - 250.0f) / 750.0f, 0.0f, 1.0f);
@@ -315,7 +315,8 @@ void Radar::UpdateInfoCards() {
     // within [VEHICLE_FUEL_RNG_MIN, VEHICLE_FUEL_RNG_MAX] and drains while driving.
     bool needsFuel = IsFuelVehicle(veh);
 
-    bool fuelActive = g_config.showGaugeFuel && s_inVehicle && needsFuel;
+    bool fuelActive = g_config.showGaugeFuel && s_inVehicle && needsFuel
+                      && s_serviceOp == SERVICE_OP_REFUEL;
     if (fuelActive && veh) {
         VehicleFuelExt& ext = s_vehicleFuelExt.Get(veh);
         if (!ext.initialized) {
@@ -576,11 +577,11 @@ static void ReleaseServiceControlBits() {
     pad->bDisablePlayerCycleWeapon = 0;
 }
 
-// Takes over the game's own camera by switching the active cam to MODE_FIXED and
-// gliding its source. CCamera::Process then builds the matrix, the frustum and the
-// streaming decisions from this state, so culling and streaming agree with what is
-// rendered - no matrix overwriting, no streaming band-aids.
-static void BeginServiceCamera(const CVector& vehPos, const CVector& pumpPos) {    // Direction from the pump back toward the car, flattened. The camera sits on
+// Owns the camera directly: writes the basis into m_mCameraMatrix and the RwCamera
+// frame every frame. Using the game's MODE_FIXED path instead means its own easing
+// fights ours (stutter on entry, orbit that never moves), so we do it ourselves.
+static void BeginServiceCamera(const CVector& vehPos, const CVector& pumpPos) {
+    // Direction from the pump back toward the car, flattened. The camera sits on
     // this line, so the pump stays centred no matter how the car is parked.
     CVector awayFromPump = vehPos - pumpPos;
     awayFromPump.z = 0.0f;
@@ -605,32 +606,58 @@ static void BeginServiceCamera(const CVector& vehPos, const CVector& pumpPos) { 
     s_serviceCamBlend   = 0.0f;
     s_serviceCamLocked  = true;
 
-    // JUMPCUT (2) takes control instantly - INTERPOLATION (1) fades in first, which
-    // is the delay between opening the menu and the camera starting to move. We
-    // drive the glide ourselves in UpdateServiceCamera, so the game must not.
-    TheCamera.TakeControlNoEntity(&s_serviceCamLookAt, SWITCHTYPE_JUMPCUT, 1);
-    TheCamera.SetCamPositionForFixedMode(&s_serviceCamFromPos, &kServiceCamUp);
-    TheCamera.m_aCams[TheCamera.m_nActiveCam].m_vecCamFixedModeVector = s_serviceCamLookAt;
-
-    // Load the scene around the pump once, since the fixed camera is about to look
-    // in a direction the game never streamed for.
-    // Removed: LoadScene was blocking, which is the delay between pressing the key
-    // and the menu appearing. MODE_FIXED streams the pump direction natively.
-
     s_servicePrevInGarage = TheCamera.m_bPlayerIsInGarage;
     TheCamera.m_bPlayerIsInGarage = true;
     s_servicePrevCarZoom = TheCamera.m_nCarZoom;
 }
 
-// Drives the fixed camera ourselves: glide to the pump, then orbit the car while an
-// operation runs. SetCamPositionForFixedMode only moves the source, so the aim is
-// written to m_vecCamFixedModeVector as well - without that the camera keeps staring
-// at whatever TakeControlNoEntity was given and the orbit is invisible.
+// Builds an orthonormal basis looking from `pos` at `lookAt` and writes it to the
+// game camera matrix and the RwCamera frame the renderer actually consumes.
+static void WriteServiceCameraBasis(const CVector& pos, const CVector& lookAt) {
+    CVector at = lookAt - pos;
+    if (at.Magnitude() < 0.01f) at = CVector(0.0f, 1.0f, 0.0f);
+    at = at.Normalized();
+
+    // right = worldUp x at, up = at x right gives det = +1. The opposite cross order
+    // yields det = -1, a reflection that mirrors left/right and inverts backface
+    // winding, so models render inside-out.
+    CVector right = CVector(0.0f, 0.0f, 1.0f).Cross(at);
+    if (right.Magnitude() < 0.01f) right = CVector(1.0f, 0.0f, 0.0f);
+    right = right.Normalized();
+    CVector up = at.Cross(right).Normalized();
+
+    CMatrix& cam = TheCamera.m_mCameraMatrix;
+    cam.pos   = pos;
+    cam.right = right;
+    cam.up    = up;
+    cam.at    = at;
+    cam.UpdateRW();
+    TheCamera.m_mCameraMatrixOld = cam;
+
+    RwCamera* rwCam = TheCamera.m_pRwCamera;
+    if (!rwCam) rwCam = Scene.m_pCamera;
+    if (rwCam) {
+        RwFrame* frame = RwCameraGetFrame(rwCam);
+        if (frame) {
+            RwMatrix* m = RwFrameGetMatrix(frame);
+            m->right.x = right.x; m->right.y = right.y; m->right.z = right.z;
+            m->up.x    = up.x;    m->up.y    = up.y;    m->up.z    = up.z;
+            m->at.x    = at.x;    m->at.y    = at.y;    m->at.z    = at.z;
+            m->pos.x   = pos.x;   m->pos.y   = pos.y;   m->pos.z   = pos.z;
+            RwFrameUpdateObjects(frame);
+        }
+    }
+
+    // Culling and streaming decide from frustum planes built in CCamera::Process,
+    // which already ran. Recompute so they match what is actually drawn.
+    TheCamera.m_vecGameCamPos = pos;
+    TheCamera.CalculateFrustumPlanes(false);
+}
+
+// Glides in to the pump, then orbits the car while an operation runs.
 static void UpdateServiceCamera(float dt) {
     if (!s_serviceCamLocked) return;
     TheCamera.m_nCarZoom = s_servicePrevCarZoom;
-
-    CCam& activeCam = TheCamera.m_aCams[TheCamera.m_nActiveCam];
 
     if (s_serviceOp != SERVICE_OP_NONE) {
         // Slow orbit around the vehicle, facing it.
@@ -650,8 +677,7 @@ static void UpdateServiceCamera(float dt) {
                        carPos.y + cosf(s_serviceOrbitAngle) * orbitRadius,
                        carPos.z + orbitHeight);
 
-        TheCamera.SetCamPositionForFixedMode(&source, &kServiceCamUp);
-        activeCam.m_vecCamFixedModeVector = carPos + CVector(0.0f, 0.0f, 0.5f);
+        WriteServiceCameraBasis(source, carPos + CVector(0.0f, 0.0f, 0.5f));
         return;
     }
 
@@ -661,17 +687,13 @@ static void UpdateServiceCamera(float dt) {
     }
     float t = s_serviceCamBlend * s_serviceCamBlend * (3.0f - 2.0f * s_serviceCamBlend);
 
-    CVector source = LerpVec(s_serviceCamFromPos, s_serviceCamToPos, t);
-    TheCamera.SetCamPositionForFixedMode(&source, &kServiceCamUp);
-    activeCam.m_vecCamFixedModeVector = s_serviceCamLookAt;
+    WriteServiceCameraBasis(LerpVec(s_serviceCamFromPos, s_serviceCamToPos, t), s_serviceCamLookAt);
 }
 
-// Hands the camera back through the game's own state machine, which clears the
-// control bits and resumes behind-car. No interpolation needed.
+// Hands the camera back. The game resumes its own camera on the next frame.
 static void EndServiceCamera() {
     if (!s_serviceCamLocked) return;
     s_serviceCamLocked = false;
-    TheCamera.Restore();
     TheCamera.m_bPlayerIsInGarage = s_servicePrevInGarage;
 }
 

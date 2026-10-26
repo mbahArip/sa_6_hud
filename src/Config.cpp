@@ -700,7 +700,7 @@ void LoadConfig() {
     g_config.repairPriceMin        = readFloat("Minimap.Extension.VehicleFuel", "REPAIR_PRICE_MIN", 10.0f);
     g_config.repairPriceMax        = readFloat("Minimap.Extension.VehicleFuel", "REPAIR_PRICE_MAX", 400.0f);
     g_config.cheatRefillFuel       = readInt("Minimap.Extension.VehicleFuel", "CHEAT_REFILL_FUEL", 0) != 0;
-    g_config.refuelDurationPerPct  = readFloat("Minimap.Extension.VehicleFuel", "REFUEL_DURATION_PER_PCT", 0.50f);
+    g_config.refuelDurationPerPct  = readFloat("Minimap.Extension.VehicleFuel", "REFUEL_DURATION_PER_PCT", 0.25f);
     g_config.repairDurationPer10Pct = readFloat("Minimap.Extension.VehicleFuel", "REPAIR_DURATION_PER_10PCT", 1.00f);
     g_config.refuelRadius          = readFloat("Minimap.Extension.VehicleFuel", "REFUEL_RADIUS", 4.0f);
 
