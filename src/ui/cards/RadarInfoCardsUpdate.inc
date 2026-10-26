@@ -620,13 +620,29 @@ static void UpdateServiceCamera(float dt) {
     cam.up    = right.Cross(at).Normalized();
     cam.at    = at;
 
-    // m_mCameraMatrix is only a staging CMatrix; the renderer reads the RwCamera's
-    // frame matrix. UpdateRW() copies the basis into that attached matrix, which is
-    // what actually moves the view. Without it the main scene keeps the game's own
-    // camera - only the reflection pass, which derives from m_mCameraMatrix, moves.
+    // m_mCameraMatrix is a game-logic cache, not the render path. Writing it only
+    // affects passes that derive from it - the reflection and lighting rebuild
+    // their matrices from this, which is why they moved while the view did not.
     cam.UpdateRW();
     TheCamera.m_mCameraMatrixOld = cam;
-    TheCamera.m_mCameraMatrixOld.UpdateRW();
+
+    // The rendered view comes from the RwCamera's frame LTM, which RwCameraBeginUpdate
+    // recomputes every frame. Push the same basis into that frame so the picture
+    // actually follows. Writing here is safe because gameProcessEvent runs after
+    // CCamera::Process, so nothing overwrites it before this frame is drawn.
+    RwCamera* rwCam = TheCamera.m_pRwCamera;
+    if (!rwCam) rwCam = Scene.m_pCamera;
+    if (rwCam) {
+        RwFrame* frame = RwCameraGetFrame(rwCam);
+        if (frame) {
+            RwMatrix* m = RwFrameGetMatrix(frame);
+            m->right.x = right.x; m->right.y = right.y; m->right.z = right.z;
+            m->up.x    = cam.up.x; m->up.y    = cam.up.y; m->up.z    = cam.up.z;
+            m->at.x    = at.x;     m->at.y    = at.y;     m->at.z    = at.z;
+            m->pos.x   = cam.pos.x; m->pos.y  = cam.pos.y; m->pos.z = cam.pos.z;
+            RwFrameUpdateObjects(frame);
+        }
+    }
 }
 
 // Holds the whole game still while the list is open.
