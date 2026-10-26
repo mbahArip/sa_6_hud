@@ -109,8 +109,14 @@ enum eServiceOp {
 static int      s_serviceOp          = SERVICE_OP_NONE;
 static float    s_serviceOpTimer     = 0.0f;
 static float    s_serviceOpDuration  = 0.0f;
+static float    s_serviceOpFillTime  = 0.0f;
+static bool     s_serviceOpFixed     = false;
 static float    s_serviceOpFromValue = 0.0f;
 static float    s_serviceOrbitAngle  = 0.0f;
+
+// Extra time added to an operation so the fill completes after the camera has
+// arrived in orbit and before it dives back to the pump.
+static const float kServiceOrbitPad = 0.6f;
 
 // One-frame guard: the key that closes the menu must not also exit the vehicle.
 static int      s_serviceSuppressFrames = 0;

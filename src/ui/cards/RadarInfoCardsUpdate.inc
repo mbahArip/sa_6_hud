@@ -293,7 +293,7 @@ void Radar::UpdateInfoCards() {
     s_gaugeSlots[GAUGE_WAYPOINT].color = g_config.gaugeWaypointColor;
 
     // G1: Engine Health (100% pristine condition; 0% engine catching fire <= 250.0f)
-    bool healthActive = g_config.showGaugeHealth && s_inVehicle && s_serviceOp == SERVICE_OP_REPAIR;
+    bool healthActive = g_config.showGaugeHealth && s_inVehicle;
     if (healthActive && veh) {
         float rawHp = veh->m_fHealth;
         float normHp = Clampf((rawHp - 250.0f) / 750.0f, 0.0f, 1.0f);
@@ -315,8 +315,7 @@ void Radar::UpdateInfoCards() {
     // within [VEHICLE_FUEL_RNG_MIN, VEHICLE_FUEL_RNG_MAX] and drains while driving.
     bool needsFuel = IsFuelVehicle(veh);
 
-    bool fuelActive = g_config.showGaugeFuel && s_inVehicle && needsFuel
-                      && s_serviceOp == SERVICE_OP_REFUEL;
+    bool fuelActive = g_config.showGaugeFuel && s_inVehicle && needsFuel;
     if (fuelActive && veh) {
         VehicleFuelExt& ext = s_vehicleFuelExt.Get(veh);
         if (!ext.initialized) {
@@ -577,9 +576,23 @@ static void ReleaseServiceControlBits() {
     pad->bDisablePlayerCycleWeapon = 0;
 }
 
-// Owns the camera directly: writes the basis into m_mCameraMatrix and the RwCamera
-// frame every frame. Using the game's MODE_FIXED path instead means its own easing
-// fights ours (stutter on entry, orbit that never moves), so we do it ourselves.
+// Drives the camera through the game's own fixed-cam path so CCamera::Process and
+// CStreaming::Update both see it and keep the world loaded. Forcing the matrix
+// directly left buildings unstreamed, which is why every write path is gone.
+static void EnterPumpView() {
+    TheCamera.TakeControlNoEntity(&s_serviceCamLookAt, SWITCHTYPE_INTERPOLATION, 1);
+    TheCamera.SetCamPositionForFixedMode(&s_serviceCamToPos, &kServiceCamUp);
+}
+
+// Takes control aimed at the car so the game glides from the pump view into the
+// orbit. The per-frame DriveOrbit calls then keep it circling.
+static void EnterOrbitView(const CVehicle* veh) {
+    if (!veh) return;
+    CVector carPos = veh->GetPosition();
+    CVector lookAt = carPos + CVector(0.0f, 0.0f, 0.5f);
+    TheCamera.TakeControlNoEntity(&lookAt, SWITCHTYPE_INTERPOLATION, 1);
+}
+
 static void BeginServiceCamera(const CVector& vehPos, const CVector& pumpPos) {
     // Direction from the pump back toward the car, flattened. The camera sits on
     // this line, so the pump stays centred no matter how the car is parked.
@@ -588,112 +601,59 @@ static void BeginServiceCamera(const CVector& vehPos, const CVector& pumpPos) {
     if (awayFromPump.Magnitude2D() < 0.5f) awayFromPump = CVector(0.0f, 1.0f, 0.0f);
     awayFromPump = awayFromPump.Normalized();
 
-    // Start from the origin the renderer is actually using, not the staging matrix.
-    CVector fromPos = TheCamera.m_mCameraMatrix.pos;
-    RwCamera* rwCam = TheCamera.m_pRwCamera;
-    if (!rwCam) rwCam = Scene.m_pCamera;
-    if (rwCam) {
-        RwFrame* frame = RwCameraGetFrame(rwCam);
-        if (frame) {
-            const RwMatrix* m = RwFrameGetMatrix(frame);
-            fromPos = CVector(m->pos.x, m->pos.y, m->pos.z);
-        }
-    }
-
-    s_serviceCamFromPos = fromPos;
     s_serviceCamToPos   = pumpPos + awayFromPump * 5.0f + CVector(0.0f, 0.0f, (vehPos.z - pumpPos.z) + 0.5f);
     s_serviceCamLookAt  = pumpPos + CVector(0.0f, 0.0f, -0.15f);
-    s_serviceCamBlend   = 0.0f;
     s_serviceCamLocked  = true;
+
+    // The game eases from wherever the camera is to the fixed source, so entering
+    // is smooth without us interpolating anything.
+    EnterPumpView();
 
     s_servicePrevInGarage = TheCamera.m_bPlayerIsInGarage;
     TheCamera.m_bPlayerIsInGarage = true;
     s_servicePrevCarZoom = TheCamera.m_nCarZoom;
 }
 
-// Builds an orthonormal basis looking from `pos` at `lookAt` and writes it to the
-// game camera matrix and the RwCamera frame the renderer actually consumes.
-static void WriteServiceCameraBasis(const CVector& pos, const CVector& lookAt) {
-    CVector at = lookAt - pos;
-    if (at.Magnitude() < 0.01f) at = CVector(0.0f, 1.0f, 0.0f);
-    at = at.Normalized();
-
-    // right = worldUp x at, up = at x right gives det = +1. The opposite cross order
-    // yields det = -1, a reflection that mirrors left/right and inverts backface
-    // winding, so models render inside-out.
-    CVector right = CVector(0.0f, 0.0f, 1.0f).Cross(at);
-    if (right.Magnitude() < 0.01f) right = CVector(1.0f, 0.0f, 0.0f);
-    right = right.Normalized();
-    CVector up = at.Cross(right).Normalized();
-
-    CMatrix& cam = TheCamera.m_mCameraMatrix;
-    cam.pos   = pos;
-    cam.right = right;
-    cam.up    = up;
-    cam.at    = at;
-    cam.UpdateRW();
-    TheCamera.m_mCameraMatrixOld = cam;
-
-    RwCamera* rwCam = TheCamera.m_pRwCamera;
-    if (!rwCam) rwCam = Scene.m_pCamera;
-    if (rwCam) {
-        RwFrame* frame = RwCameraGetFrame(rwCam);
-        if (frame) {
-            RwMatrix* m = RwFrameGetMatrix(frame);
-            m->right.x = right.x; m->right.y = right.y; m->right.z = right.z;
-            m->up.x    = up.x;    m->up.y    = up.y;    m->up.z    = up.z;
-            m->at.x    = at.x;    m->at.y    = at.y;    m->at.z    = at.z;
-            m->pos.x   = pos.x;   m->pos.y   = pos.y;   m->pos.z   = pos.z;
-            RwFrameUpdateObjects(frame);
-        }
-    }
-
-    // Culling and streaming decide from frustum planes built in CCamera::Process,
-    // which already ran. Recompute so they match what is actually drawn.
-    TheCamera.m_vecGameCamPos = pos;
-    TheCamera.CalculateFrustumPlanes(false);
+// Pushes the orbit source into the game camera. SetCamPositionForFixedMode only
+// moves the source, so the look-at vector must be written too - without it the
+// camera keeps staring at the pump and the orbit reads as static.
+static void DriveOrbit(const CVector& source, const CVector& lookAt) {
+    TheCamera.SetCamPositionForFixedMode(&source, &kServiceCamUp);
+    TheCamera.m_aCams[TheCamera.m_nActiveCam].m_vecCamFixedModeVector = lookAt;
 }
 
-// Glides in to the pump, then orbits the car while an operation runs.
+// Keeps the orbit running while an operation is active. Transitions in and out are
+// owned by the game via TakeControlNoEntity, so both ends glide.
 static void UpdateServiceCamera(float dt) {
     if (!s_serviceCamLocked) return;
     TheCamera.m_nCarZoom = s_servicePrevCarZoom;
 
-    if (s_serviceOp != SERVICE_OP_NONE) {
-        // Slow orbit around the vehicle, facing it.
-        CPlayerPed* player = FindPlayerPed(0);
-        if (!player) return;
-        CVehicle* veh = GetStablePlayerVehicle(player);
-        if (!veh) return;
+    if (s_serviceOp == SERVICE_OP_NONE) return;
 
-        s_serviceOrbitAngle += dt * 0.12f;
-        if (s_serviceOrbitAngle > 2.0f * kPi) s_serviceOrbitAngle -= 2.0f * kPi;
+    CPlayerPed* player = FindPlayerPed(0);
+    if (!player) return;
+    CVehicle* veh = GetStablePlayerVehicle(player);
+    if (!veh) return;
 
-        CVector carPos = veh->GetPosition();
-        const float orbitRadius = 7.0f;
-        const float orbitHeight = 1.6f;
+    s_serviceOrbitAngle += dt * 0.12f;
+    if (s_serviceOrbitAngle > 2.0f * kPi) s_serviceOrbitAngle -= 2.0f * kPi;
 
-        CVector source(carPos.x + sinf(s_serviceOrbitAngle) * orbitRadius,
-                       carPos.y + cosf(s_serviceOrbitAngle) * orbitRadius,
-                       carPos.z + orbitHeight);
+    CVector carPos = veh->GetPosition();
+    const float orbitRadius = 7.0f;
+    const float orbitHeight = 1.6f;
 
-        WriteServiceCameraBasis(source, carPos + CVector(0.0f, 0.0f, 0.5f));
-        return;
-    }
+    CVector source(carPos.x + sinf(s_serviceOrbitAngle) * orbitRadius,
+                   carPos.y + cosf(s_serviceOrbitAngle) * orbitRadius,
+                   carPos.z + orbitHeight);
 
-    // Glide in to the pump view, then hold it.
-    if (s_serviceCamBlend < 1.0f) {
-        s_serviceCamBlend = std::min(1.0f, s_serviceCamBlend + dt / kServiceCamBlendSeconds);
-    }
-    float t = s_serviceCamBlend * s_serviceCamBlend * (3.0f - 2.0f * s_serviceCamBlend);
-
-    WriteServiceCameraBasis(LerpVec(s_serviceCamFromPos, s_serviceCamToPos, t), s_serviceCamLookAt);
+    DriveOrbit(source, carPos + CVector(0.0f, 0.0f, 0.5f));
 }
 
-// Hands the camera back. The game resumes its own camera on the next frame.
+// Hands the camera back. The game runs its own transition out of the fixed cam.
 static void EndServiceCamera() {
     if (!s_serviceCamLocked) return;
     s_serviceCamLocked = false;
+    TheCamera.Restore();
     TheCamera.m_bPlayerIsInGarage = s_servicePrevInGarage;
 }
 
@@ -856,7 +816,11 @@ void Radar::UpdateFuelServices() {
         // A running operation owns the row input until it finishes.
     if (s_serviceOp != SERVICE_OP_NONE) {
         s_serviceOpTimer += dt;
-        float t = (s_serviceOpDuration > 0.0f) ? Clampf(s_serviceOpTimer / s_serviceOpDuration, 0.0f, 1.0f) : 1.0f;
+        // Fill progress runs over s_serviceOpFillTime, which excludes the orbit pad,
+        // so the value is complete by the time the camera dives back to the pump.
+        float t = (s_serviceOpFillTime > 0.0f)
+                    ? Clampf(s_serviceOpTimer / s_serviceOpFillTime, 0.0f, 1.0f)
+                    : 1.0f;
 
         VehicleFuelExt& opExt = s_vehicleFuelExt.Get(veh);
         if (s_serviceOp == SERVICE_OP_REFUEL) {
@@ -866,14 +830,15 @@ void Radar::UpdateFuelServices() {
             opExt.fuelLevel = s_vehFuel;
         } else {
             veh->m_fHealth = Lerpf(s_serviceOpFromValue, 1000.0f, t);
-            if (t >= 1.0f) veh->Fix();
+            if (t >= 1.0f && !s_serviceOpFixed) { veh->Fix(); s_serviceOpFixed = true; }
         }
 
-        if (t >= 1.0f) {
+        if (s_serviceOpTimer >= s_serviceOpDuration) {
             s_serviceOp = SERVICE_OP_NONE;
             s_serviceOpTimer = 0.0f;
-            // Return to the static pump view once the fill is done.
-            TheCamera.SetCamPositionForFixedMode(&s_serviceCamToPos, &kServiceCamUp);
+            s_serviceOpFixed = false;
+            // Glide back to the pump view through the game's own transition.
+            EnterPumpView();
         }
         s_serviceLastSelect = selectDown;
         s_serviceLastBack = backDown;
@@ -899,9 +864,13 @@ void Radar::UpdateFuelServices() {
                 CWorld::Players[0].m_nMoney -= price;
                 s_serviceOp = SERVICE_OP_REFUEL;
                 s_serviceOpFromValue = s_vehFuel;
-                s_serviceOpDuration = (1.0f - s_vehFuel) * 100.0f * g_config.refuelDurationPerPct;
+                // Pad the fill so it does not finish mid-transition into the orbit.
+                s_serviceOpDuration = (1.0f - s_vehFuel) * 100.0f * g_config.refuelDurationPerPct
+                                    + kServiceOrbitPad;
+                s_serviceOpFillTime = s_serviceOpDuration - kServiceOrbitPad;
                 s_serviceOpTimer = 0.0f;
                 s_serviceOrbitAngle = 0.0f;
+                EnterOrbitView(veh);
                 LogWrite("fuel: refuelling for $%d over %.1fs (from %.0f%%)",
                          price, s_serviceOpDuration, s_vehFuel * 100.0f);
             }
@@ -913,9 +882,11 @@ void Radar::UpdateFuelServices() {
                 float missing = Clampf((1000.0f - veh->m_fHealth) / 100.0f, 0.0f, 10.0f);
                 s_serviceOp = SERVICE_OP_REPAIR;
                 s_serviceOpFromValue = veh->m_fHealth;
-                s_serviceOpDuration = missing * g_config.repairDurationPer10Pct;
+                s_serviceOpDuration = missing * g_config.repairDurationPer10Pct + kServiceOrbitPad;
+                s_serviceOpFillTime = s_serviceOpDuration - kServiceOrbitPad;
                 s_serviceOpTimer = 0.0f;
                 s_serviceOrbitAngle = 0.0f;
+                EnterOrbitView(veh);
                 LogWrite("fuel: repairing for $%d over %.1fs", price, s_serviceOpDuration);
             }
         }
