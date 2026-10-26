@@ -89,6 +89,8 @@ static bool     s_serviceCamLocked   = false;
 static const float kServiceCamBlendSeconds = 0.30f;
 static CMatrix  s_serviceStartCamMatrix;
 static bool     s_servicePrevInGarage = false;
+static unsigned int s_servicePrevCarZoom = 0;
+static eCamMode s_servicePrevCamMode  = (eCamMode)0;
 static CVector  s_serviceCamFromPos(0.0f, 0.0f, 0.0f);
 static CVector  s_serviceCamToPos(0.0f, 0.0f, 0.0f);
 static CVector  s_serviceCamLookAt(0.0f, 0.0f, 0.0f);

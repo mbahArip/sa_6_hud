@@ -590,10 +590,13 @@ static void BeginServiceCamera(const CVector& vehPos, const CVector& pumpPos) {
     s_serviceCamBlend   = 0.0f;
     s_serviceCamLocked  = true;
 
-    // Suppress the camera-cycle key for the duration, the same way the game does
-    // while the player is inside a garage.
+    // Suppress the camera-cycle key for the duration. m_bPlayerIsInGarage alone does
+    // not stop it, so the mode/zoom are snapshotted here and forced back every frame
+    // in UpdateServiceCamera - the camera simply cannot stay in another mode.
     s_servicePrevInGarage = TheCamera.m_bPlayerIsInGarage;
     TheCamera.m_bPlayerIsInGarage = true;
+    s_servicePrevCarZoom  = TheCamera.m_nCarZoom;
+    s_servicePrevCamMode  = TheCamera.m_aCams[TheCamera.m_nActiveCam].m_nMode;
 }
 
 // Writes the blended camera transform. Called after CCamera::Process has run, so
@@ -612,20 +615,22 @@ static void UpdateServiceCamera(float dt) {
     cam.pos = LerpVec(s_serviceCamFromPos, s_serviceCamToPos, t);
 
     // San Andreas stores `at` pointing BACKWARD from the camera, not along the view
-    // direction. Building it as lookAt - pos produces a mirrored basis: left/right
-    // swap and backface culling inverts, which is why models looked inside-out while
-    // up/down stayed correct.
+    // direction.
     CVector at = cam.pos - s_serviceCamLookAt;
     if (at.Magnitude() < 0.01f) at = CVector(0.0f, -1.0f, 0.0f);
     at = at.Normalized();
 
-    // Right-handed basis from the backward vector: right = at x worldUp.
-    CVector right = at.Cross(CVector(0.0f, 0.0f, 1.0f));
+    // right = worldUp x at. With `at` pointing backward, the other order yields a
+    // negative determinant: a reflection that swaps left/right and inverts backface
+    // winding, so models look inside-out.
+    CVector right = CVector(0.0f, 0.0f, 1.0f).Cross(at);
     if (right.Magnitude() < 0.01f) right = CVector(1.0f, 0.0f, 0.0f);
     right = right.Normalized();
 
     cam.right = right;
-    cam.up    = right.Cross(at).Normalized();
+    // up = at x right, which is the partner that keeps det = +1. right x at gives a
+    // negated up and rolls the image 180 degrees.
+    cam.up    = at.Cross(right).Normalized();
     cam.at    = at;
 
     // m_mCameraMatrix is a game-logic cache, not the render path. Writing it only
@@ -651,6 +656,10 @@ static void UpdateServiceCamera(float dt) {
             RwFrameUpdateObjects(frame);
         }
     }
+
+    // Pin the camera mode/zoom so the cycle key cannot leave the locked view.
+    TheCamera.m_nCarZoom = s_servicePrevCarZoom;
+    TheCamera.m_aCams[TheCamera.m_nActiveCam].m_nMode = s_servicePrevCamMode;
 }
 
 // Holds the whole game still while the list is open.
