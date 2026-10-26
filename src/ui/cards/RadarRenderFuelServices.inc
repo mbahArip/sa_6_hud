@@ -177,6 +177,31 @@ void Radar::DrawFuelServices() {
         return;
     }
 
+    // While an operation runs, the rows are replaced by a single progress gauge with
+    // the operation name, so the only feedback is the sweep plus the live telemetry.
+    if (s_serviceOp != SERVICE_OP_NONE) {
+        float progress = (s_serviceOpFillTime > 0.0f)
+                            ? Clampf(s_serviceOpTimer / s_serviceOpFillTime, 0.0f, 1.0f)
+                            : 1.0f;
+        const char* label = (s_serviceOp == SERVICE_OP_REFUEL) ? "Refuelling..." : "Repairing...";
+
+        float radius = 26.0f * scale;
+        DrawKeyBadge(sx, sy, radius, "", trackCol, discBg, accent, progress);
+
+        float labelScale = 0.62f * scale;
+        CFont::SetFontStyle(FONT_MENU);
+        CFont::SetProportional(true);
+        CFont::SetJustify(false);
+        CFont::SetOrientation(ALIGN_CENTER);
+        CFont::SetEdge(1);
+        CFont::SetDropColor(discBg);
+        CFont::SetDropShadowPosition(0);
+        CFont::SetScale(labelScale, labelScale * 1.9f);
+        CFont::SetColor(textCol);
+        CFont::PrintString(sx, sy + radius + 10.0f * scale, label);
+        return;
+    }
+
     // Menu open: two rows stacked below the anchor, left-aligned on it.
     struct RowView { char badge[16]; char label[48]; bool enabled; int price; };
     RowView rows[SERVICE_ROW_COUNT] = {};

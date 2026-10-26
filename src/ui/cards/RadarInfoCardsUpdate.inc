@@ -601,7 +601,7 @@ static void BeginServiceCamera(const CVector& vehPos, const CVector& pumpPos) {
     if (awayFromPump.Magnitude2D() < 0.5f) awayFromPump = CVector(0.0f, 1.0f, 0.0f);
     awayFromPump = awayFromPump.Normalized();
 
-    s_serviceCamToPos   = pumpPos + awayFromPump * 5.0f + CVector(0.0f, 0.0f, (vehPos.z - pumpPos.z) + 0.5f);
+    s_serviceCamToPos   = pumpPos + awayFromPump * 7.0f + CVector(0.0f, 0.0f, (vehPos.z - pumpPos.z) + 0.5f);
     s_serviceCamLookAt  = pumpPos + CVector(0.0f, 0.0f, -0.15f);
     s_serviceCamLocked  = true;
 
@@ -635,12 +635,12 @@ static void UpdateServiceCamera(float dt) {
     CVehicle* veh = GetStablePlayerVehicle(player);
     if (!veh) return;
 
-    s_serviceOrbitAngle += dt * 0.12f;
+    s_serviceOrbitAngle += dt * 0.30f;
     if (s_serviceOrbitAngle > 2.0f * kPi) s_serviceOrbitAngle -= 2.0f * kPi;
 
     CVector carPos = veh->GetPosition();
-    const float orbitRadius = 7.0f;
-    const float orbitHeight = 1.6f;
+    const float orbitRadius = 10.0f;
+    const float orbitHeight = 2.0f;
 
     CVector source(carPos.x + sinf(s_serviceOrbitAngle) * orbitRadius,
                    carPos.y + cosf(s_serviceOrbitAngle) * orbitRadius,
