@@ -546,6 +546,9 @@ static bool s_servicePadDisabled = false;
 // pad state being cleared underneath them.
 static const unsigned short kServiceControlBits = 0x0084; // bit 2 + bit 7
 
+// World-up used for the fixed camera's up offset.
+static const CVector kServiceCamUp(0.0f, 0.0f, 1.0f);
+
 // Re-asserted every frame, not just on open. San Andreas resets the transition
 // flags during its own control pass, so a one-shot write gets wiped and the game
 // starts reading input again mid-menu.
@@ -575,8 +578,7 @@ static void ReleaseServiceControlBits() {
 // gliding its source. CCamera::Process then builds the matrix, the frustum and the
 // streaming decisions from this state, so culling and streaming agree with what is
 // rendered - no matrix overwriting, no streaming band-aids.
-static void BeginServiceCamera(const CVector& vehPos, const CVector& pumpPos) {
-    // Direction from the pump back toward the car, flattened. The camera sits on
+static void BeginServiceCamera(const CVector& vehPos, const CVector& pumpPos) {    // Direction from the pump back toward the car, flattened. The camera sits on
     // this line, so the pump stays centred no matter how the car is parked.
     CVector awayFromPump = vehPos - pumpPos;
     awayFromPump.z = 0.0f;
@@ -601,19 +603,14 @@ static void BeginServiceCamera(const CVector& vehPos, const CVector& pumpPos) {
     s_serviceCamBlend   = 0.0f;
     s_serviceCamLocked  = true;
 
-    // Hand the camera to the game. From here CCamera::Process owns the transform.
-    CCam& activeCam = TheCamera.m_aCams[TheCamera.m_nActiveCam];
-    s_servicePrevCamMode = activeCam.m_nMode;
-    activeCam.m_vecCamFixedModeSource  = fromPos;
-    activeCam.m_vecCamFixedModeVector  = s_serviceCamLookAt;
-    activeCam.m_vecCamFixedModeUpOffSet = CVector(0.0f, 0.0f, 1.0f);
-    activeCam.m_nMode = MODE_FIXED;
+    // Enter the game's scripted fixed camera. Writing m_nMode directly does nothing:
+    // CCamera::Process picks its cam code from m_nWhoIsInControlOfTheCamera and
+    // m_nModeToGoTo, so without TakeControlNoEntity the fixed-cam path never runs and
+    // the view stays on behind-car. That is why exit worked (it just restored the old
+    // mode) while entering did not.
+    TheCamera.TakeControlNoEntity(&s_serviceCamLookAt, 2, 1);
+    TheCamera.SetCamPositionForFixedMode(&fromPos, &kServiceCamUp);
 
-    // Load the scene around the pump once, since the fixed camera is about to look
-    // in a direction the game never streamed for.
-    CStreaming::LoadScene(&pumpPos);
-
-    // Suppress the camera-cycle key for the duration.
     s_servicePrevInGarage = TheCamera.m_bPlayerIsInGarage;
     TheCamera.m_bPlayerIsInGarage = true;
     s_servicePrevCarZoom = TheCamera.m_nCarZoom;
@@ -630,21 +627,17 @@ static void UpdateServiceCamera(float dt) {
     // Smoothstep: zero velocity at both ends, so the move starts and stops gently.
     float t = s_serviceCamBlend * s_serviceCamBlend * (3.0f - 2.0f * s_serviceCamBlend);
 
-    CCam& activeCam = TheCamera.m_aCams[TheCamera.m_nActiveCam];
-    activeCam.m_vecCamFixedModeSource   = LerpVec(s_serviceCamFromPos, s_serviceCamToPos, t);
-    activeCam.m_vecCamFixedModeVector   = s_serviceCamLookAt;
-    activeCam.m_vecCamFixedModeUpOffSet = CVector(0.0f, 0.0f, 1.0f);
-    // Keep re-asserting the mode: the game resets it during its own camera pass.
-    activeCam.m_nMode = MODE_FIXED;
+    CVector source = LerpVec(s_serviceCamFromPos, s_serviceCamToPos, t);
+    TheCamera.SetCamPositionForFixedMode(&source, &kServiceCamUp);
     TheCamera.m_nCarZoom = s_servicePrevCarZoom;
 }
 
-// Hands the camera back. CCamera sees a mode change and runs its own transition,
-// so the return is smooth without us interpolating anything.
+// Hands the camera back through the game's own state machine, which clears the
+// control bits and resumes behind-car. No interpolation needed.
 static void EndServiceCamera() {
     if (!s_serviceCamLocked) return;
     s_serviceCamLocked = false;
-    TheCamera.m_aCams[TheCamera.m_nActiveCam].m_nMode = s_servicePrevCamMode;
+    TheCamera.Restore();
     TheCamera.m_bPlayerIsInGarage = s_servicePrevInGarage;
 }
 
