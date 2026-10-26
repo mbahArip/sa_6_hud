@@ -598,8 +598,8 @@ static void BeginServiceCamera(const CVector& vehPos, const CVector& pumpPos) {
 
     // Close stand-off so the view stays inside the radius the game already streamed
     // around the player, and a flat aim so the pump lands at screen centre.
-    s_serviceCamToPos   = pumpPos + awayFromPump * 2.0f + CVector(0.0f, 0.0f, (vehPos.z - pumpPos.z) + 1.1f);
-    s_serviceCamLookAt  = pumpPos + CVector(0.0f, 0.0f, 0.2f);
+    s_serviceCamToPos   = pumpPos + awayFromPump * 3.0f + CVector(0.0f, 0.0f, (vehPos.z - pumpPos.z) + 0.9f);
+    s_serviceCamLookAt  = pumpPos + CVector(0.0f, 0.0f, 0.0f);
     s_serviceCamBlend   = 0.0f;
     s_serviceCamLocked  = true;
 
@@ -679,6 +679,14 @@ static void UpdateServiceCamera(float dt) {
     // Pin the camera mode/zoom so the cycle key cannot leave the locked view.
     TheCamera.m_nCarZoom = s_servicePrevCarZoom;
     TheCamera.m_aCams[TheCamera.m_nActiveCam].m_nMode = s_servicePrevCamMode;
+
+    // Culling and streaming both decide against frustum planes computed in
+    // CCamera::Process, which already ran this frame. Rewriting only the RwCamera
+    // frame leaves those systems looking at the OLD view, so geometry we turn to
+    // face is never loaded or drawn. Feed the new transform into the game camera
+    // state and recompute the planes, so culling matches what is rendered.
+    TheCamera.m_vecGameCamPos = cam.pos;
+    TheCamera.CalculateFrustumPlanes(false);
 }
 
 // Holds the whole game still while the list is open.
@@ -747,7 +755,7 @@ void Radar::UpdateFuelServices() {
     CObject* pump = nullptr;
     CVector pumpPos(0.0f, 0.0f, 0.0f);
     if (eligible) {
-        pump = FindNearestPump(veh->GetPosition(), 12.0f);
+        pump = FindNearestPump(veh->GetPosition(), 1.0f);
         if (pump) pumpPos = pump->GetPosition();
     }
 
