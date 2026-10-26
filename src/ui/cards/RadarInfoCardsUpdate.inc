@@ -598,16 +598,17 @@ static void BeginServiceCamera(const CVector& vehPos, const CVector& pumpPos) {
 
     // Close stand-off so the view stays inside the radius the game already streamed
     // around the player, and a flat aim so the pump lands at screen centre.
-    s_serviceCamToPos   = pumpPos + awayFromPump * 3.0f + CVector(0.0f, 0.0f, (vehPos.z - pumpPos.z) + 0.9f);
-    s_serviceCamLookAt  = pumpPos + CVector(0.0f, 0.0f, 0.0f);
+    s_serviceCamToPos   = pumpPos + awayFromPump * 4.0f + CVector(0.0f, 0.0f, (vehPos.z - pumpPos.z) + 0.9f);
+    s_serviceCamLookAt  = pumpPos + CVector(0.0f, 0.0f, -0.15f);
     s_serviceCamBlend   = 0.0f;
     s_serviceCamLocked  = true;
+    s_serviceCamExiting = false;
 
-    // One-shot, not per-frame: streaming reads from disk, so calling this every tick
-    // injects a hitch each frame and turns the glide into a stutter. A single request
-    // at open is enough to queue the geometry around the pump.
-    CVector target = s_serviceCamToPos;
-    CStreaming::RequestBigBuildings(&target);
+    // Load the whole scene around the pump, not just the big-building LODs. The
+    // camera is about to face a direction the game never streamed for, so requesting
+    // only RequestBigBuildings leaves the mid and small geometry missing. LoadScene
+    // is what the game itself uses on a teleport: one blocking load, once, at open.
+    CStreaming::LoadScene(&pumpPos);
 
     // Suppress the camera-cycle key for the duration. m_bPlayerIsInGarage alone does
     // not stop it, so the mode/zoom are snapshotted here and forced back every frame
@@ -622,6 +623,52 @@ static void BeginServiceCamera(const CVector& vehPos, const CVector& pumpPos) {
 // the value survives to render.
 static void UpdateServiceCamera(float dt) {
     if (!s_serviceCamLocked) return;
+
+    // Exit glide: blend from the locked view back toward whatever the game camera
+    // wants, which CCamera::Process recomputes each frame once we stop pinning it.
+    if (s_serviceCamExiting) {
+        s_serviceCamExitBlend = std::min(1.0f, s_serviceCamExitBlend + dt / kServiceCamExitSeconds);
+        float e = s_serviceCamExitBlend;
+        float et = e * e * (3.0f - 2.0f * e);
+
+        CMatrix& gameCam = TheCamera.m_mCameraMatrix;
+        CVector livePos = gameCam.pos;
+        CVector liveAt  = gameCam.at;
+
+        CVector pos = LerpVec(s_serviceCamToPos, livePos, et);
+        CVector at  = LerpVec(s_serviceCamExitAt, liveAt, et);
+        if (at.Magnitude() < 0.01f) at = CVector(0.0f, 1.0f, 0.0f);
+        at = at.Normalized();
+
+        CVector right = CVector(0.0f, 0.0f, 1.0f).Cross(at);
+        if (right.Magnitude() < 0.01f) right = CVector(1.0f, 0.0f, 0.0f);
+        right = right.Normalized();
+
+        gameCam.pos   = pos;
+        gameCam.right = right;
+        gameCam.up    = at.Cross(right).Normalized();
+        gameCam.at    = at;
+
+        RwCamera* exitCam = TheCamera.m_pRwCamera;
+        if (!exitCam) exitCam = Scene.m_pCamera;
+        if (exitCam) {
+            RwFrame* frame = RwCameraGetFrame(exitCam);
+            if (frame) {
+                RwMatrix* m = RwFrameGetMatrix(frame);
+                m->right.x = right.x;    m->right.y = right.y;    m->right.z = right.z;
+                m->up.x    = gameCam.up.x; m->up.y  = gameCam.up.y; m->up.z  = gameCam.up.z;
+                m->at.x    = at.x;       m->at.y    = at.y;       m->at.z    = at.z;
+                m->pos.x   = pos.x;      m->pos.y   = pos.y;      m->pos.z   = pos.z;
+                RwFrameUpdateObjects(frame);
+            }
+        }
+
+        if (s_serviceCamExitBlend >= 1.0f) {
+            s_serviceCamExiting = false;
+            s_serviceCamLocked  = false;
+        }
+        return;
+    }
 
     if (s_serviceCamBlend < 1.0f) {
         s_serviceCamBlend = std::min(1.0f, s_serviceCamBlend + dt / kServiceCamBlendSeconds);
@@ -687,6 +734,9 @@ static void UpdateServiceCamera(float dt) {
     // state and recompute the planes, so culling matches what is rendered.
     TheCamera.m_vecGameCamPos = cam.pos;
     TheCamera.CalculateFrustumPlanes(false);
+
+    // Remember where we ended up, so the exit glide has a starting point.
+    s_serviceCamExitAt = cam.at;
 }
 
 // Holds the whole game still while the list is open.
@@ -766,7 +816,8 @@ void Radar::UpdateFuelServices() {
     // control immediately.
     if (s_serviceOpen && (wanted || !eligible || !pump)) {
         s_serviceOpen = false;
-        s_serviceCamLocked = false;
+        s_serviceCamExiting = s_serviceCamLocked;
+        s_serviceCamExitBlend = 0.0f;
         TheCamera.m_bPlayerIsInGarage = s_servicePrevInGarage;
     }
 
@@ -798,6 +849,8 @@ void Radar::UpdateFuelServices() {
     // Freeze only after the pad has been sampled above, otherwise clearing the
     // input state would also swallow the menu's own navigation.
     if (s_serviceOpen) FreezeServiceInput(veh, dt);
+    // Keep driving the camera through the exit glide, after the menu has closed.
+    else if (s_serviceCamExiting) UpdateServiceCamera(dt);
 
     if (!s_serviceOpen) {
         // One frame of grace after closing: the key that dismissed the menu must not
@@ -850,7 +903,8 @@ void Radar::UpdateFuelServices() {
 
     if (backDown && !s_serviceLastBack) {
         s_serviceOpen = false;
-        s_serviceCamLocked = false;
+        s_serviceCamExiting = true;
+        s_serviceCamExitBlend = 0.0f;
         TheCamera.m_bPlayerIsInGarage = s_servicePrevInGarage;
         s_serviceSuppressFrames = 2;
     } else if (selectDown && !s_serviceLastSelect) {
