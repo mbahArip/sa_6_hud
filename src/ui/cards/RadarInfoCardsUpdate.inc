@@ -596,9 +596,9 @@ static void BeginServiceCamera(const CVector& vehPos, const CVector& pumpPos) {
         }
     }
 
-    // Flat eye-line at the car's own height, closer in for the zoom.
-    s_serviceCamToPos   = pumpPos + awayFromPump * 4.5f + CVector(0.0f, 0.0f, vehPos.z - pumpPos.z);
-    s_serviceCamLookAt  = pumpPos + CVector(0.0f, 0.0f, 0.4f);
+    // Eye-line slightly above the car's own height, closer in for the zoom.
+    s_serviceCamToPos   = pumpPos + awayFromPump * 4.5f + CVector(0.0f, 0.0f, (vehPos.z - pumpPos.z) + 1.1f);
+    s_serviceCamLookAt  = pumpPos + CVector(0.0f, 0.0f, 0.8f);
     s_serviceCamBlend   = 0.0f;
     s_serviceCamLocked  = true;
 
