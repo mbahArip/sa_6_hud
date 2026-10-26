@@ -92,6 +92,7 @@ static CMatrix  s_serviceStartCamMatrix;
 static CVector  s_serviceCamExitAt(0.0f, 0.0f, 0.0f);
 static float    s_serviceCamExitBlend = 0.0f;
 static bool     s_serviceCamExiting   = false;
+static int      s_serviceStreamTick   = 0;
 static bool     s_servicePrevInGarage = false;
 static unsigned int s_servicePrevCarZoom = 0;
 static eCamMode s_servicePrevCamMode  = (eCamMode)0;
