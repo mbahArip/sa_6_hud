@@ -755,7 +755,7 @@ void Radar::UpdateFuelServices() {
     CObject* pump = nullptr;
     CVector pumpPos(0.0f, 0.0f, 0.0f);
     if (eligible) {
-        pump = FindNearestPump(veh->GetPosition(), 1.0f);
+        pump = FindNearestPump(veh->GetPosition(), 2.5f);
         if (pump) pumpPos = pump->GetPosition();
     }
 
