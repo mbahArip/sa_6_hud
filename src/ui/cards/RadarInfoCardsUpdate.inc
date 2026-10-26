@@ -344,8 +344,10 @@ void Radar::UpdateInfoCards() {
             } else {
                 s_vehFuel = 1.0f;
             }
-            ext.fuelLevel = s_vehFuel;
         }
+        // Mirror unconditionally: the services menu reads s_vehFuel, and a stale ext
+        // value is what made a half-full tank get charged as half empty.
+        ext.fuelLevel = s_vehFuel;
 
         // Engine control when out of fuel: cut throttle, keep brakes/steering intact
         if (g_config.useVehicleFuel && s_vehFuel <= 0.001f) {
@@ -603,12 +605,12 @@ static void BeginServiceCamera(const CVector& vehPos, const CVector& pumpPos) { 
     s_serviceCamBlend   = 0.0f;
     s_serviceCamLocked  = true;
 
-    // SWITCHTYPE_INTERPOLATION (1) makes the game glide from the current camera to
-    // the fixed one. Passing 2 (JUMPCUT) snapped instantly, which is what was
-    // reported. Letting the game interpolate also means we must NOT lerp the source
-    // ourselves - two interpolations fighting produced a stutter.
-    TheCamera.TakeControlNoEntity(&s_serviceCamLookAt, SWITCHTYPE_INTERPOLATION, 1);
-    TheCamera.SetCamPositionForFixedMode(&s_serviceCamToPos, &kServiceCamUp);
+    // JUMPCUT (2) takes control instantly - INTERPOLATION (1) fades in first, which
+    // is the delay between opening the menu and the camera starting to move. We
+    // drive the glide ourselves in UpdateServiceCamera, so the game must not.
+    TheCamera.TakeControlNoEntity(&s_serviceCamLookAt, SWITCHTYPE_JUMPCUT, 1);
+    TheCamera.SetCamPositionForFixedMode(&s_serviceCamFromPos, &kServiceCamUp);
+    TheCamera.m_aCams[TheCamera.m_nActiveCam].m_vecCamFixedModeVector = s_serviceCamLookAt;
 
     // Load the scene around the pump once, since the fixed camera is about to look
     // in a direction the game never streamed for.
@@ -620,36 +622,48 @@ static void BeginServiceCamera(const CVector& vehPos, const CVector& pumpPos) { 
     s_servicePrevCarZoom = TheCamera.m_nCarZoom;
 }
 
-// Keeps the target pinned while the game runs its own transition. While an
-// operation is running the camera slowly orbits the car instead, so the fill is
-// visible from a moving angle.
+// Drives the fixed camera ourselves: glide to the pump, then orbit the car while an
+// operation runs. SetCamPositionForFixedMode only moves the source, so the aim is
+// written to m_vecCamFixedModeVector as well - without that the camera keeps staring
+// at whatever TakeControlNoEntity was given and the orbit is invisible.
 static void UpdateServiceCamera(float dt) {
     if (!s_serviceCamLocked) return;
     TheCamera.m_nCarZoom = s_servicePrevCarZoom;
 
-    if (s_serviceOp == SERVICE_OP_NONE) return;
+    CCam& activeCam = TheCamera.m_aCams[TheCamera.m_nActiveCam];
 
-    // Slow orbit around the vehicle, facing it. Zoomed out a little further than
-    // the pump stand-off so the whole car is in frame.
-    CPlayerPed* player = FindPlayerPed(0);
-    if (!player) return;
-    CVehicle* veh = GetStablePlayerVehicle(player);
-    if (!veh) return;
+    if (s_serviceOp != SERVICE_OP_NONE) {
+        // Slow orbit around the vehicle, facing it.
+        CPlayerPed* player = FindPlayerPed(0);
+        if (!player) return;
+        CVehicle* veh = GetStablePlayerVehicle(player);
+        if (!veh) return;
 
-    s_serviceOrbitAngle += dt * 0.12f;   // ~52 degrees per second at 60fps
-    if (s_serviceOrbitAngle > 2.0f * kPi) s_serviceOrbitAngle -= 2.0f * kPi;
+        s_serviceOrbitAngle += dt * 0.12f;
+        if (s_serviceOrbitAngle > 2.0f * kPi) s_serviceOrbitAngle -= 2.0f * kPi;
 
-    CVector carPos = veh->GetPosition();
-    const float orbitRadius = 7.0f;
-    const float orbitHeight = 1.6f;
+        CVector carPos = veh->GetPosition();
+        const float orbitRadius = 7.0f;
+        const float orbitHeight = 1.6f;
 
-    CVector source(carPos.x + sinf(s_serviceOrbitAngle) * orbitRadius,
-                   carPos.y + cosf(s_serviceOrbitAngle) * orbitRadius,
-                   carPos.z + orbitHeight);
+        CVector source(carPos.x + sinf(s_serviceOrbitAngle) * orbitRadius,
+                       carPos.y + cosf(s_serviceOrbitAngle) * orbitRadius,
+                       carPos.z + orbitHeight);
 
-    // Look at the car, not the pump, while the fill runs.
-    s_serviceCamLookAt = carPos + CVector(0.0f, 0.0f, 0.5f);
+        TheCamera.SetCamPositionForFixedMode(&source, &kServiceCamUp);
+        activeCam.m_vecCamFixedModeVector = carPos + CVector(0.0f, 0.0f, 0.5f);
+        return;
+    }
+
+    // Glide in to the pump view, then hold it.
+    if (s_serviceCamBlend < 1.0f) {
+        s_serviceCamBlend = std::min(1.0f, s_serviceCamBlend + dt / kServiceCamBlendSeconds);
+    }
+    float t = s_serviceCamBlend * s_serviceCamBlend * (3.0f - 2.0f * s_serviceCamBlend);
+
+    CVector source = LerpVec(s_serviceCamFromPos, s_serviceCamToPos, t);
     TheCamera.SetCamPositionForFixedMode(&source, &kServiceCamUp);
+    activeCam.m_vecCamFixedModeVector = s_serviceCamLookAt;
 }
 
 // Hands the camera back through the game's own state machine, which clears the
@@ -817,15 +831,17 @@ void Radar::UpdateFuelServices() {
     // Menu is open: keep the prompt fully opaque and drive the list.
     s_servicePromptAlpha = 1.0f;
 
-    // A running operation owns the row input until it finishes.
+        // A running operation owns the row input until it finishes.
     if (s_serviceOp != SERVICE_OP_NONE) {
         s_serviceOpTimer += dt;
         float t = (s_serviceOpDuration > 0.0f) ? Clampf(s_serviceOpTimer / s_serviceOpDuration, 0.0f, 1.0f) : 1.0f;
 
         VehicleFuelExt& opExt = s_vehicleFuelExt.Get(veh);
         if (s_serviceOp == SERVICE_OP_REFUEL) {
-            opExt.fuelLevel = Lerpf(s_serviceOpFromValue, 1.0f, t);
-            s_vehFuel = opExt.fuelLevel;
+            // s_vehFuel is what the gauge shows, so it is the authority here. Mirror
+            // into the ext so the two can never drift apart again.
+            s_vehFuel = Lerpf(s_serviceOpFromValue, 1.0f, t);
+            opExt.fuelLevel = s_vehFuel;
         } else {
             veh->m_fHealth = Lerpf(s_serviceOpFromValue, 1000.0f, t);
             if (t >= 1.0f) veh->Fix();
@@ -854,16 +870,18 @@ void Radar::UpdateFuelServices() {
     } else if (selectDown && !s_serviceLastSelect) {
         VehicleFuelExt& ext = s_vehicleFuelExt.Get(veh);
         if (s_serviceRow == SERVICE_ROW_REFUEL) {
-            int price = RefuelPrice(pumpPos, ext.fuelLevel);
+            // s_vehFuel is the gauge's value; ext.fuelLevel can be stale, which is what
+            // made a half-full tank get charged and timed as if it were half empty.
+            int price = RefuelPrice(pumpPos, s_vehFuel);
             if (price > 0 && CWorld::Players[0].m_nMoney >= price) {
                 CWorld::Players[0].m_nMoney -= price;
-                // Timed fill: 0.5s per 1% of tank, configurable.
                 s_serviceOp = SERVICE_OP_REFUEL;
-                s_serviceOpFromValue = ext.fuelLevel;
-                s_serviceOpDuration = (1.0f - ext.fuelLevel) * 100.0f * g_config.refuelDurationPerPct;
+                s_serviceOpFromValue = s_vehFuel;
+                s_serviceOpDuration = (1.0f - s_vehFuel) * 100.0f * g_config.refuelDurationPerPct;
                 s_serviceOpTimer = 0.0f;
                 s_serviceOrbitAngle = 0.0f;
-                LogWrite("fuel: refuelling for $%d over %.1fs", price, s_serviceOpDuration);
+                LogWrite("fuel: refuelling for $%d over %.1fs (from %.0f%%)",
+                         price, s_serviceOpDuration, s_vehFuel * 100.0f);
             }
         } else {
             int price = RepairPrice(veh);

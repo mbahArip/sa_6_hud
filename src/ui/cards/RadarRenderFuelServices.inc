@@ -187,14 +187,15 @@ void Radar::DrawFuelServices() {
         rows[i].price = -1;
     }
 
-    VehicleFuelExt& ext = s_vehicleFuelExt.Get(veh);
-    bool tankFull = ext.fuelLevel >= 0.99f;
+    // s_vehFuel is what the telemetry gauge shows, so the menu agrees with it. The
+    // ext copy can lag behind, which is what made a half-full tank read as half empty.
+    bool tankFull = s_vehFuel >= 0.99f;
     bool needsRepair = NeedsRepair(veh);
 
     snprintf(rows[SERVICE_ROW_REFUEL].label, sizeof(rows[SERVICE_ROW_REFUEL].label), "%s",
              tankFull ? "Tank is full" : "Refuel");
     rows[SERVICE_ROW_REFUEL].enabled = !tankFull;
-    if (!tankFull) rows[SERVICE_ROW_REFUEL].price = RefuelPrice(s_serviceAnchor, ext.fuelLevel);
+    if (!tankFull) rows[SERVICE_ROW_REFUEL].price = RefuelPrice(s_serviceAnchor, s_vehFuel);
 
     snprintf(rows[SERVICE_ROW_REPAIR].label, sizeof(rows[SERVICE_ROW_REPAIR].label), "%s",
              needsRepair ? "Repair" : "No repair needed");
@@ -219,7 +220,9 @@ void Radar::DrawFuelServices() {
     for (int i = 0; i < SERVICE_ROW_COUNT; ++i) {
         bool selected = (i == s_serviceRow);
         CRGBA col = rows[i].enabled ? (selected ? accent : textCol) : dimCol;
-        CRGBA ring = rows[i].enabled ? (selected ? accent : trackCol) : trackCol;
+        // The track is always the dim ring. Drawing it in the accent colour hid the
+        // fill arc against it, so the progress sweep was invisible.
+        CRGBA ring = trackCol;
 
         // Only the row whose operation is running shows a fill.
         float ringProgress = 0.0f;
