@@ -583,12 +583,17 @@ static void BeginServiceCamera(const CVector& vehPos, const CVector& pumpPos) {
     if (awayFromPump.Magnitude2D() < 0.5f) awayFromPump = CVector(0.0f, 1.0f, 0.0f);
     awayFromPump = awayFromPump.Normalized();
 
-    // Stand off far enough to frame the pump plus the car, and above it a little.
+    // Stand off far enough to frame the pump plus the car, at roughly body height.
     s_serviceCamFromPos = s_serviceStartCamMatrix.pos;
-    s_serviceCamToPos   = pumpPos + awayFromPump * 7.0f + CVector(0.0f, 0.0f, 2.4f);
-    s_serviceCamLookAt  = pumpPos + CVector(0.0f, 0.0f, 0.9f);
+    s_serviceCamToPos   = pumpPos + awayFromPump * 7.0f + CVector(0.0f, 0.0f, 1.5f);
+    s_serviceCamLookAt  = pumpPos + CVector(0.0f, 0.0f, 0.6f);
     s_serviceCamBlend   = 0.0f;
     s_serviceCamLocked  = true;
+
+    // Suppress the camera-cycle key for the duration, the same way the game does
+    // while the player is inside a garage.
+    s_servicePrevInGarage = TheCamera.m_bPlayerIsInGarage;
+    TheCamera.m_bPlayerIsInGarage = true;
 }
 
 // Writes the blended camera transform. Called after CCamera::Process has run, so
@@ -606,12 +611,15 @@ static void UpdateServiceCamera(float dt) {
     CMatrix& cam = TheCamera.m_mCameraMatrix;
     cam.pos = LerpVec(s_serviceCamFromPos, s_serviceCamToPos, t);
 
-    CVector at = s_serviceCamLookAt - cam.pos;
-    if (at.Magnitude() < 0.01f) at = CVector(0.0f, 1.0f, 0.0f);
+    // San Andreas stores `at` pointing BACKWARD from the camera, not along the view
+    // direction. Building it as lookAt - pos produces a mirrored basis: left/right
+    // swap and backface culling inverts, which is why models looked inside-out while
+    // up/down stayed correct.
+    CVector at = cam.pos - s_serviceCamLookAt;
+    if (at.Magnitude() < 0.01f) at = CVector(0.0f, -1.0f, 0.0f);
     at = at.Normalized();
 
-    // RW basis: right = at x worldUp, up = right x at. The SDK's GetUp()/GetForward()
-    // accessors are swapped relative to these members, so write them directly.
+    // Right-handed basis from the backward vector: right = at x worldUp.
     CVector right = at.Cross(CVector(0.0f, 0.0f, 1.0f));
     if (right.Magnitude() < 0.01f) right = CVector(1.0f, 0.0f, 0.0f);
     right = right.Normalized();
@@ -720,7 +728,11 @@ void Radar::UpdateFuelServices() {
 
     // Pursuit gained mid-service, or the car left the pump: drop out and restore
     // control immediately.
-    if (s_serviceOpen && (wanted || !eligible || !pump)) s_serviceOpen = false;
+    if (s_serviceOpen && (wanted || !eligible || !pump)) {
+        s_serviceOpen = false;
+        s_serviceCamLocked = false;
+        TheCamera.m_bPlayerIsInGarage = s_servicePrevInGarage;
+    }
 
     float dt = CTimer::ms_fTimeStep * 0.02f;
     if (dt <= 0.0f || dt > 0.1f) dt = 0.0166f;
@@ -803,6 +815,7 @@ void Radar::UpdateFuelServices() {
     if (backDown && !s_serviceLastBack) {
         s_serviceOpen = false;
         s_serviceCamLocked = false;
+        TheCamera.m_bPlayerIsInGarage = s_servicePrevInGarage;
         s_serviceSuppressFrames = 2;
     } else if (selectDown && !s_serviceLastSelect) {
         VehicleFuelExt& ext = s_vehicleFuelExt.Get(veh);
