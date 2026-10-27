@@ -31,10 +31,7 @@ private:
     static void UpdateWantedSearch();
     static void UpdateInfoCards();
     static void UpdateFuelServices();
-    static void DrawFuelServices();
-    static void DrawPumpIcons(const CRect& rect, float alpha, bool drawAll);
-    static void DrawPumpIconsOnMenuMap();
-    static void DrawOverlay();
+    static void DrawFuelServices();    static void DrawOverlay();
 
     static void DrawBackdrop(const CRect& rect, float alpha);
     static void DrawMap2D(const CRect& rect, float alpha);

@@ -65,9 +65,10 @@ void Radar::Process() {
     if (g_config.enableWantedSearchRadius) GuardedRun(UpdateWantedSearch, "process.wanted");
     if (g_config.showInfoCards)            GuardedRun(UpdateInfoCards, "process.cards");
     GuardedRun(UpdateFuelServices, "process.fuel");
-    // Pump icons are needed both in gameplay and on the ESC map, so the cluster list
-    // is rebuilt once per frame here rather than per draw.
-    GuardedRun(RebuildPumpClusters, "process.pumps");
+    // Adds newly streamed pumps to the persistent cache and blips them. Pumps live in
+    // binary IPLs, so the list accumulates as the map streams in rather than being
+    // rebuilt from scratch.
+    GuardedRun(RefreshPumpClusters, "process.pumps");
     GuardedRun(WriteDebugLog, "process.debug");
 
     if (g_config.enabled) {

@@ -127,9 +127,6 @@ void Radar::DrawMenuMapOverlay() {
         }
     }
 
-    // Pump icons on the pause map, drawn before the GPS ribbon so the route sits on top.
-    DrawPumpIconsOnMenuMap();
-
     if (!g_config.enableMenuMapGps) return;
     UpdateGps();
 

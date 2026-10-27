@@ -265,6 +265,7 @@ void Radar::Shutdown() {
     g_pathCount = 0;
     g_pathFrameTicker = 0;
     WipeAllHeatAndSearch();
+    ClearPumpBlips();
 }
 
 void Radar::Restart() {

@@ -554,6 +554,10 @@ static const CVector kServiceCamUp(0.0f, 0.0f, 1.0f);
 // Re-asserted every frame, not just on open. San Andreas resets the transition
 // flags during its own control pass, so a one-shot write gets wiped and the game
 // starts reading input again mid-menu.
+static const float kServiceOpTweenSec = 0.4f;   // time to glide into/out of orbit view
+static const float kServiceOrbitSpeed = 0.08f;  // orbit angle step per frame tick
+static const float kServiceOrbitRadius = 10.0f;
+static const float kServiceOrbitHeight = 2.0f;
 static void HoldServiceControlBits() {
     CPad* pad = CPad::GetPad(0);
     if (!pad) return;
@@ -585,13 +589,18 @@ static void EnterPumpView() {
 }
 
 // Takes control aimed at the car so the game glides from the pump view into the
-// orbit. Aim point goes in m_vecFixedModeVector, the same field the game's
-// POINT_CAMERA_AT_POINT writes.
+// orbit. m_vecFixedModeVector is a DIRECTION vector (normalised), not a world
+// point - passing a world position makes the camera look at garbage because the
+// engine normalises it against itself.
 static void EnterOrbitView(const CVehicle* veh) {
     if (!veh) return;
     CVector carPos = veh->GetPosition();
-    CVector lookAt = carPos + CVector(0.0f, 0.0f, 0.5f);
-    TheCamera.TakeControlNoEntity(&lookAt, SWITCHTYPE_INTERPOLATION, 1);
+    CVector lookDir = carPos + CVector(0.0f, 0.0f, 0.5f) - s_serviceCamToPos;
+    float mag = lookDir.Magnitude();
+    if (mag > 0.001f) lookDir *= (1.0f / mag);
+    TheCamera.TakeControlNoEntity(&lookDir, SWITCHTYPE_INTERPOLATION, 1);
+    TheCamera.SetCamPositionForFixedMode(&s_serviceCamToPos, &kServiceCamUp);
+    TheCamera.m_vecFixedModeVector = lookDir;
 }
 
 static void BeginServiceCamera(const CVector& vehPos, const CVector& pumpPos) {
@@ -615,43 +624,122 @@ static void BeginServiceCamera(const CVector& vehPos, const CVector& pumpPos) {
     s_servicePrevCarZoom = TheCamera.m_nCarZoom;
 }
 
-// Pushes the orbit source into the game camera.
-//
-// The aim goes into CCamera::m_vecFixedModeVector (the POINT to look at), not
-// CCam::m_vecCamFixedModeVector - that one is a direction, and writing a point there
-// normalises to something near-vertical, which is why the camera looked away instead
-// of circling. Position and aim point are the same pair the game's own
-// SET_FIXED_CAMERA_POSITION / POINT_CAMERA_AT_POINT sequence writes.
+// Pushes the orbit source and aim into the game camera.
+// m_vecFixedModeVector is the aim point (point the camera looks at), not a
+// direction. Writing both the CCamera field and the CCam field because the
+// engine copies between them internally; writing both covers either path.
 static void DriveOrbit(const CVector& source, const CVector& lookAt) {
     TheCamera.SetCamPositionForFixedMode(&source, &kServiceCamUp);
     TheCamera.m_vecFixedModeVector = lookAt;
+    TheCamera.m_aCams[TheCamera.m_nActiveCam].m_vecCamFixedModeVector = lookAt;
 }
 
-// Keeps the orbit running while an operation is active. Transitions in and out are
-// owned by the game via TakeControlNoEntity, so both ends glide.
+// Camera choreography for a running operation.
+//
+// Short ops (< kServiceOrbitThresholdSec) never leave the pump view - orbiting a
+// 2-second refuel reads as padding. Long ops hold the pump view briefly, glide out
+// to orbit, then glide back before finishing. All transitions are source/aim lerps
+// through the game's fixed-cam path, so streaming stays coherent.
+static const float kServiceOrbitThresholdSec = 5.0f;  // only orbit ops this long
+static const float kServiceOrbitDelaySec     = 1.0f;  // hold pump view first
+static const float kServiceOrbitReturnSec    = 0.8f;  // come back before done
+static const float kServiceOrbitGlideSec     = 0.7f;  // blend between views
+
+enum eOrbitPhase { ORBIT_PUMP_HOLD, ORBIT_GLIDE_OUT, ORBIT_RUNNING, ORBIT_GLIDE_IN };
+
+static eOrbitPhase s_orbitPhase = ORBIT_PUMP_HOLD;
+static float       s_orbitElapsed = 0.0f;
+
+static void ResetOrbitPhase() {
+    s_orbitPhase = ORBIT_PUMP_HOLD;
+    s_orbitElapsed = 0.0f;
+}
+
+// Glides from wherever the orbit currently sits back to the stored pump framing.
+static void GlideToPumpView(float t) {
+    CVector source = LerpVec(TheCamera.m_vecFixedModeSource, s_serviceCamToPos, t);
+    CVector lookAt = LerpVec(TheCamera.m_vecFixedModeVector, s_serviceCamLookAt, t);
+    DriveOrbit(source, lookAt);
+}
+
 static void UpdateServiceCamera(float dt) {
     if (!s_serviceCamLocked) return;
     TheCamera.m_nCarZoom = s_servicePrevCarZoom;
 
-    if (s_serviceOp == SERVICE_OP_NONE) return;
+    if (s_serviceOp == SERVICE_OP_NONE) {
+        ResetOrbitPhase();
+        return;
+    }
 
     CPlayerPed* player = FindPlayerPed(0);
     if (!player) return;
     CVehicle* veh = GetStablePlayerVehicle(player);
     if (!veh) return;
 
-    s_serviceOrbitAngle += dt * 0.30f;
-    if (s_serviceOrbitAngle > 2.0f * kPi) s_serviceOrbitAngle -= 2.0f * kPi;
+    // Below the threshold there is nothing worth orbiting: keep the pump framing.
+    if (s_serviceOpDuration < kServiceOrbitThresholdSec) {
+        DriveOrbit(s_serviceCamToPos, s_serviceCamLookAt);
+        return;
+    }
 
+    s_orbitElapsed += dt;
+    const float totalRemaining = s_serviceOpDuration - s_serviceOpTimer;
     CVector carPos = veh->GetPosition();
-    const float orbitRadius = 10.0f;
-    const float orbitHeight = 2.0f;
+    const CVector lookAt = carPos + CVector(0.0f, 0.0f, 0.5f);
 
-    CVector source(carPos.x + sinf(s_serviceOrbitAngle) * orbitRadius,
-                   carPos.y + cosf(s_serviceOrbitAngle) * orbitRadius,
-                   carPos.z + orbitHeight);
+    switch (s_orbitPhase) {
+        case ORBIT_PUMP_HOLD:
+            DriveOrbit(s_serviceCamToPos, s_serviceCamLookAt);
+            if (s_orbitElapsed >= kServiceOrbitDelaySec) {
+                s_orbitPhase = ORBIT_GLIDE_OUT;
+                s_orbitElapsed = 0.0f;
+                TheCamera.m_vecFixedModeSource = s_serviceCamToPos;
+            }
+            break;
 
-    DriveOrbit(source, carPos + CVector(0.0f, 0.0f, 0.5f));
+        case ORBIT_GLIDE_OUT: {
+            float t = Clampf(s_orbitElapsed / kServiceOrbitGlideSec, 0.0f, 1.0f);
+            t = t * t * (3.0f - 2.0f * t);  // smoothstep
+            s_serviceOrbitAngle += dt * 0.30f;
+            CVector target(carPos.x + sinf(s_serviceOrbitAngle) * kServiceOrbitRadius,
+                           carPos.y + cosf(s_serviceOrbitAngle) * kServiceOrbitRadius,
+                           carPos.z + kServiceOrbitHeight);
+            CVector source = LerpVec(TheCamera.m_vecFixedModeSource, target, t);
+            DriveOrbit(source, lookAt);
+            if (t >= 1.0f) {
+                s_orbitPhase = ORBIT_RUNNING;
+                s_orbitElapsed = 0.0f;
+            }
+            break;
+        }
+
+        case ORBIT_RUNNING: {
+            s_serviceOrbitAngle += dt * 0.30f;
+            if (s_serviceOrbitAngle > 2.0f * kPi) s_serviceOrbitAngle -= 2.0f * kPi;
+            CVector source(carPos.x + sinf(s_serviceOrbitAngle) * kServiceOrbitRadius,
+                           carPos.y + cosf(s_serviceOrbitAngle) * kServiceOrbitRadius,
+                           carPos.z + kServiceOrbitHeight);
+            DriveOrbit(source, lookAt);
+            // Start gliding back early enough that we land on the pump as it finishes.
+            if (totalRemaining <= kServiceOrbitReturnSec + kServiceOrbitGlideSec) {
+                s_orbitPhase = ORBIT_GLIDE_IN;
+                s_orbitElapsed = 0.0f;
+                TheCamera.m_vecFixedModeSource = source;
+            }
+            break;
+        }
+
+        case ORBIT_GLIDE_IN: {
+            float t = Clampf(s_orbitElapsed / kServiceOrbitGlideSec, 0.0f, 1.0f);
+            t = t * t * (3.0f - 2.0f * t);
+            GlideToPumpView(t);
+            if (t >= 1.0f) {
+                s_orbitPhase = ORBIT_PUMP_HOLD;
+                s_orbitElapsed = 0.0f;
+            }
+            break;
+        }
+    }
 }
 
 // Hands the camera back. The game runs its own transition out of the fixed cam.
@@ -725,11 +813,11 @@ void Radar::UpdateFuelServices() {
                   && player->m_pPlayerData->m_pWanted->m_nWantedLevel > 0;
 
     // Nearest live pump object within reach, and whether the car is parked there.
-    CObject* pump = nullptr;
+    const PumpCluster* pump = nullptr;
     CVector pumpPos(0.0f, 0.0f, 0.0f);
     if (eligible) {
         pump = FindNearestPump(veh->GetPosition(), g_config.refuelRadius);
-        if (pump) pumpPos = pump->GetPosition();
+        if (pump) pumpPos = pump->pos;
     }
 
     bool stopped = eligible && veh->m_vecMoveSpeed.Magnitude() < 0.05f;
