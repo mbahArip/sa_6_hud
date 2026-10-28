@@ -354,6 +354,9 @@ static void DrawD3DTexturedQuad(IDirect3DTexture9* pTex, float x, float y, float
 
     dev->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, quad, sizeof(D3D2DVert));
     dev->SetTexture(0, NULL);
+    RwRenderStateSet(rwRENDERSTATETEXTURERASTER, NULL);
+    RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDSRCALPHA);
+    RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDINVSRCALPHA);
 }
 
 static void DrawD3DTexturedQuadAdditive(IDirect3DTexture9* pTex, float x, float y, float w, float h, CRGBA col) {
@@ -390,6 +393,9 @@ static void DrawD3DTexturedQuadAdditive(IDirect3DTexture9* pTex, float x, float 
     dev->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, quad, sizeof(D3D2DVert));
     dev->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
     dev->SetTexture(0, NULL);
+    RwRenderStateSet(rwRENDERSTATETEXTURERASTER, NULL);
+    RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDSRCALPHA);
+    RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDINVSRCALPHA);
 }
 
 static void DrawD3DRotatedQuad(IDirect3DTexture9* pTex, float cx, float cy, float w, float h, float angle, CRGBA col) {

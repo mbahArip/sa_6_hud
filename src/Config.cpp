@@ -212,7 +212,7 @@ static int ParseKeyBind(const std::string& raw) {
         { "SPACE", VK_SPACE }, { "ENTER", VK_RETURN }, { "RETURN", VK_RETURN },
         { "ESC", VK_ESCAPE }, { "ESCAPE", VK_ESCAPE }, { "TAB", VK_TAB },
         { "UP", VK_UP }, { "DOWN", VK_DOWN }, { "LEFT", VK_LEFT }, { "RIGHT", VK_RIGHT },
-        { "SHIFT", VK_SHIFT }, { "CTRL", VK_CONTROL }, { "ALT", VK_MENU },
+        { "SHIFT", VK_SHIFT }, { "CTRL", VK_CONTROL }, { "LCTRL", VK_LCONTROL }, { "RCTRL", VK_RCONTROL }, { "ALT", VK_MENU },
         { "BACKSPACE", VK_BACK }, { "INSERT", VK_INSERT }, { "DELETE", VK_DELETE },
         { "HOME", VK_HOME }, { "END", VK_END }, { "PAGEUP", VK_PRIOR }, { "PAGEDOWN", VK_NEXT },
     };
@@ -227,7 +227,7 @@ static int ParseKeyBind(const std::string& raw) {
             { "VK_DELETE", VK_DELETE }, { "VK_HOME", VK_HOME }, { "VK_END", VK_END },
             { "VK_PRIOR", VK_PRIOR }, { "VK_NEXT", VK_NEXT }, { "VK_UP", VK_UP },
             { "VK_DOWN", VK_DOWN }, { "VK_LEFT", VK_LEFT }, { "VK_RIGHT", VK_RIGHT },
-            { "VK_SHIFT", VK_SHIFT }, { "VK_CONTROL", VK_CONTROL }, { "VK_MENU", VK_MENU },
+            { "VK_SHIFT", VK_SHIFT }, { "VK_CONTROL", VK_CONTROL }, { "VK_LCONTROL", VK_LCONTROL }, { "VK_RCONTROL", VK_RCONTROL }, { "VK_MENU", VK_MENU },
             { "VK_OEM_1", VK_OEM_1 }, { "VK_OEM_2", VK_OEM_2 }, { "VK_OEM_3", VK_OEM_3 },
             { "VK_OEM_4", VK_OEM_4 }, { "VK_OEM_5", VK_OEM_5 }, { "VK_OEM_6", VK_OEM_6 },
             { "VK_OEM_7", VK_OEM_7 }, { "VK_OEM_PLUS", VK_OEM_PLUS }, { "VK_OEM_MINUS", VK_OEM_MINUS },
@@ -328,7 +328,9 @@ static void KeyBindToString(int vk, char* out, size_t outSize) {
         case VK_LEFT:    snprintf(out, outSize, "LEFT");    return;
         case VK_RIGHT:   snprintf(out, outSize, "RIGHT");   return;
         case VK_SHIFT:   snprintf(out, outSize, "SHIFT");   return;
-        case VK_CONTROL: snprintf(out, outSize, "CTRL");    return;
+        case VK_CONTROL:
+        case VK_LCONTROL:
+        case VK_RCONTROL: snprintf(out, outSize, "CTRL");    return;
         case VK_MENU:    snprintf(out, outSize, "ALT");     return;
         case VK_BACK:    snprintf(out, outSize, "BACKSPACE"); return;
         case VK_INSERT:  snprintf(out, outSize, "INSERT");  return;
@@ -703,11 +705,14 @@ void LoadConfig() {
     g_config.refuelDurationPerPct  = readFloat("Minimap.Extension.VehicleFuel", "REFUEL_DURATION_PER_PCT", 0.25f);
     g_config.repairDurationPer10Pct = readFloat("Minimap.Extension.VehicleFuel", "REPAIR_DURATION_PER_10PCT", 1.00f);
     g_config.refuelRadius          = readFloat("Minimap.Extension.VehicleFuel", "REFUEL_RADIUS", 4.0f);
+    g_config.fuelPumpModelNames    = readStr("Minimap.Extension.VehicleFuel", "FUEL_PUMP_MODEL_NAMES", "washgaspump, petrolpumpnew, vegspetrolpump");
+    g_config.showOrbitCamera       = readInt("Minimap.Extension.VehicleFuel", "SHOW_ORBIT_CAMERA", 1) != 0;
+    g_config.incrementalRepair     = readInt("Minimap.Extension.VehicleFuel", "INCREMENTAL_REPAIR", 1) != 0;
 
     // [KEYS] Gas pump services menu. An empty value falls back to the defaults in
-    // Config.h, which mirror the vanilla garage keys (SPACE select, F/ENTER back).
-    g_config.serviceKey       = ParseKeyBind(readStr("KEYS", "SERVICE_KEY", " "));
-    if (g_config.serviceKey == 0) g_config.serviceKey = ' ';
+    // Config.h, which mirror the vanilla garage keys (LCTRL hold, ENTER select, F back).
+    g_config.serviceKey       = ParseKeyBind(readStr("KEYS", "SERVICE_KEY", "LCTRL"));
+    if (g_config.serviceKey == 0) g_config.serviceKey = VK_LCONTROL;
     g_config.servicePad       = ParsePadBind(readStr("KEYS", "SERVICE_PAD", "LB"));
     g_config.serviceSelectKey = ParseKeyBind(readStr("KEYS", "SERVICE_SELECT_KEY", "VK_RETURN"));
     if (g_config.serviceSelectKey == 0) g_config.serviceSelectKey = VK_RETURN;
@@ -1235,6 +1240,9 @@ void SaveConfig() {
     writeFloat("Minimap.Extension.VehicleFuel", "REFUEL_DURATION_PER_PCT", g_config.refuelDurationPerPct, "%.2f");
     writeFloat("Minimap.Extension.VehicleFuel", "REPAIR_DURATION_PER_10PCT", g_config.repairDurationPer10Pct, "%.2f");
     writeFloat("Minimap.Extension.VehicleFuel", "REFUEL_RADIUS", g_config.refuelRadius, "%.2f");
+    writeStr("Minimap.Extension.VehicleFuel", "FUEL_PUMP_MODEL_NAMES", g_config.fuelPumpModelNames.c_str());
+    writeInt("Minimap.Extension.VehicleFuel", "SHOW_ORBIT_CAMERA", g_config.showOrbitCamera ? 1 : 0);
+    writeInt("Minimap.Extension.VehicleFuel", "INCREMENTAL_REPAIR", g_config.incrementalRepair ? 1 : 0);
 
     // [Wanted.Visual]
     writeInt("Wanted.Visual", "USE_WANTED_STAR", g_config.useWantedStar ? 1 : 0);

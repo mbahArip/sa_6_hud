@@ -174,9 +174,12 @@ struct Config {
     float  refuelDurationPerPct     = 0.25f;                 // REFUEL_DURATION_PER_PCT: seconds per 1% of tank
     float  repairDurationPer10Pct   = 1.00f;                 // REPAIR_DURATION_PER_10PCT: seconds per 10% health
     float  refuelRadius             = 4.0f;                  // REFUEL_RADIUS: pump trigger distance in metres
+    std::string fuelPumpModelNames  = "washgaspump, petrolpumpnew, vegspetrolpump"; // FUEL_PUMP_MODEL_NAMES: comma-separated pump DFF model names
+    bool   showOrbitCamera          = true;                  // SHOW_ORBIT_CAMERA: 360 cinematic orbit camera during refuel/repair
+    bool   incrementalRepair        = true;                  // INCREMENTAL_REPAIR: sequential part repair vs instant fix
 
     // [KEYS] Gas pump services menu
-    int    serviceKey               = ' ';                   // SERVICE_KEY: hold near a pump to open
+    int    serviceKey               = VK_LCONTROL;           // SERVICE_KEY: hold near a pump to open
     int    servicePad               = PADBTN_LB;             // SERVICE_PAD
     int    serviceSelectKey         = VK_RETURN;             // SERVICE_SELECT_KEY
     int    serviceSelectPad         = PADBTN_A;              // SERVICE_SELECT_PAD

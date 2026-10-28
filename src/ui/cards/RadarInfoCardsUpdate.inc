@@ -504,12 +504,18 @@ static void KeyBadgeName(int vk, int pad, bool usePad, char* out, size_t outSize
         }
     }
     switch (vk) {
-        case VK_SPACE:  snprintf(out, outSize, "SPACE");  return;
-        case VK_RETURN: snprintf(out, outSize, "ENTER");  return;
-        case VK_UP:     snprintf(out, outSize, "UP");     return;
-        case VK_DOWN:   snprintf(out, outSize, "DOWN");   return;
-        case VK_ESCAPE: snprintf(out, outSize, "ESC");    return;
-        case VK_TAB:    snprintf(out, outSize, "TAB");    return;
+        case VK_SPACE:    snprintf(out, outSize, "SPACE");  return;
+        case VK_RETURN:   snprintf(out, outSize, "ENTER");  return;
+        case VK_UP:       snprintf(out, outSize, "UP");     return;
+        case VK_DOWN:     snprintf(out, outSize, "DOWN");   return;
+        case VK_ESCAPE:   snprintf(out, outSize, "ESC");    return;
+        case VK_TAB:      snprintf(out, outSize, "TAB");    return;
+        case VK_CONTROL:
+        case VK_LCONTROL:
+        case VK_RCONTROL: snprintf(out, outSize, "CTRL");   return;
+        case VK_SHIFT:
+        case VK_LSHIFT:
+        case VK_RSHIFT:   snprintf(out, outSize, "SHIFT");  return;
         default: break;
     }
     if (vk > 0 && vk < 0x80) snprintf(out, outSize, "%c", (char)vk);
@@ -588,31 +594,62 @@ static void EnterPumpView() {
     TheCamera.SetCamPositionForFixedMode(&s_serviceCamToPos, &kServiceCamUp);
 }
 
-// Takes control aimed at the car so the game glides from the pump view into the
-// orbit. m_vecFixedModeVector is a DIRECTION vector (normalised), not a world
-// point - passing a world position makes the camera look at garbage because the
-// engine normalises it against itself.
-static void EnterOrbitView(const CVehicle* veh) {
-    if (!veh) return;
-    CVector carPos = veh->GetPosition();
-    CVector lookDir = carPos + CVector(0.0f, 0.0f, 0.5f) - s_serviceCamToPos;
-    float mag = lookDir.Magnitude();
-    if (mag > 0.001f) lookDir *= (1.0f / mag);
-    TheCamera.TakeControlNoEntity(&lookDir, SWITCHTYPE_INTERPOLATION, 1);
-    TheCamera.SetCamPositionForFixedMode(&s_serviceCamToPos, &kServiceCamUp);
-    TheCamera.m_vecFixedModeVector = lookDir;
+// Casts a line of sight ray to detect buildings and objects, clamping camera distance
+// so it never enters interior walls or geometry behind vehicles or during orbit.
+static CVector ResolveCameraCollision(const CVector& from, const CVector& to, float minSafetyDist = 0.35f, float minTotalDist = 1.0f) {
+    CColPoint colPoint;
+    CEntity* hitEntity = nullptr;
+    if (CWorld::ProcessLineOfSight(from, to, colPoint, hitEntity,
+                                  true,  // checkBuildings
+                                  false, // checkVehicles
+                                  false, // checkPeds
+                                  true,  // checkObjects
+                                  false, // checkDummies
+                                  false, // doSeeThroughCheck
+                                  true,  // doCameraIgnoreCheck
+                                  false)) {
+        CVector ray = to - from;
+        float totalDist = ray.Magnitude();
+        if (totalDist > 0.001f) {
+            float hitDist = (colPoint.m_vecPoint - from).Magnitude();
+            float safeDist = Clampf(hitDist - minSafetyDist, minTotalDist, totalDist);
+            return from + ray * (safeDist / totalDist);
+        }
+    }
+    return to;
 }
 
 static void BeginServiceCamera(const CVector& vehPos, const CVector& pumpPos) {
-    // Direction from the pump back toward the car, flattened. The camera sits on
-    // this line, so the pump stays centred no matter how the car is parked.
+    // Direction from the pump back toward the car, flattened.
     CVector awayFromPump = vehPos - pumpPos;
     awayFromPump.z = 0.0f;
     if (awayFromPump.Magnitude2D() < 0.5f) awayFromPump = CVector(0.0f, 1.0f, 0.0f);
     awayFromPump = awayFromPump.Normalized();
 
-    s_serviceCamToPos   = pumpPos + awayFromPump * 7.0f + CVector(0.0f, 0.0f, (vehPos.z - pumpPos.z) + 0.5f);
-    s_serviceCamLookAt  = pumpPos + CVector(0.0f, 0.0f, -0.15f);
+    CPlayerPed* player = FindPlayerPed(0);
+    CVehicle* veh = player ? GetStablePlayerVehicle(player) : nullptr;
+
+    float extent = 1.2f;
+    if (veh) {
+        CColModel* col = veh->GetColModel();
+        if (col) {
+            CVector fwd = veh->m_matrix ? veh->m_matrix->GetForward() : CVector(0.0f, 1.0f, 0.0f);
+            CVector right = veh->m_matrix ? veh->m_matrix->GetRight() : CVector(1.0f, 0.0f, 0.0f);
+            float halfW = col->m_boundBox.m_vecMax.x;
+            float halfL = col->m_boundBox.m_vecMax.y;
+            float dotR = fabsf(awayFromPump.x * right.x + awayFromPump.y * right.y);
+            float dotF = fabsf(awayFromPump.x * fwd.x + awayFromPump.y * fwd.y);
+            extent = dotR * halfW + dotF * halfL;
+        }
+    }
+
+    // Camera sits 3.0m behind the vehicle body facing the pump nozzle at eye level.
+    // If a wall or obstacle is behind the car, line-of-sight pulls camera safely in front.
+    CVector rayStart = vehPos + awayFromPump * extent + CVector(0.0f, 0.0f, 0.50f);
+    CVector desiredPos = rayStart + awayFromPump * 3.0f;
+    s_serviceCamToPos   = ResolveCameraCollision(rayStart, desiredPos, 0.35f, 0.3f);
+    s_serviceCamLookAt  = pumpPos + CVector(0.0f, 0.0f, 0.50f);
+    s_servicePumpPos    = pumpPos;
     s_serviceCamLocked  = true;
 
     // The game eases from wherever the camera is to the fixed source, so entering
@@ -624,50 +661,98 @@ static void BeginServiceCamera(const CVector& vehPos, const CVector& pumpPos) {
     s_servicePrevCarZoom = TheCamera.m_nCarZoom;
 }
 
-// Pushes the orbit source and aim into the game camera.
-// m_vecFixedModeVector is the aim point (point the camera looks at), not a
-// direction. Writing both the CCamera field and the CCam field because the
-// engine copies between them internally; writing both covers either path.
+// Pushes the orbit source and aim into the game camera and active CCam.
 static void DriveOrbit(const CVector& source, const CVector& lookAt) {
     TheCamera.SetCamPositionForFixedMode(&source, &kServiceCamUp);
+    TheCamera.m_vecFixedModeSource = source;
     TheCamera.m_vecFixedModeVector = lookAt;
-    TheCamera.m_aCams[TheCamera.m_nActiveCam].m_vecCamFixedModeVector = lookAt;
+
+    CCam& cam = TheCamera.m_aCams[TheCamera.m_nActiveCam];
+    cam.m_vecCamFixedModeSource = source;
+    cam.m_vecSource = source;
+    cam.m_vecCamFixedModeVector = lookAt;
+    cam.m_vecTargetCoorsForFudgeInter = lookAt;
 }
 
-// Camera choreography for a running operation.
-//
-// Short ops (< kServiceOrbitThresholdSec) never leave the pump view - orbiting a
-// 2-second refuel reads as padding. Long ops hold the pump view briefly, glide out
-// to orbit, then glide back before finishing. All transitions are source/aim lerps
-// through the game's fixed-cam path, so streaming stays coherent.
-static const float kServiceOrbitThresholdSec = 5.0f;  // only orbit ops this long
-static const float kServiceOrbitDelaySec     = 1.0f;  // hold pump view first
-static const float kServiceOrbitReturnSec    = 0.8f;  // come back before done
-static const float kServiceOrbitGlideSec     = 0.7f;  // blend between views
+static const float kServiceOrbitGlideSec = 0.8f;  // blend between views
 
-enum eOrbitPhase { ORBIT_PUMP_HOLD, ORBIT_GLIDE_OUT, ORBIT_RUNNING, ORBIT_GLIDE_IN };
+enum eRepairPartType {
+    PART_DOOR,
+    PART_PANEL,
+    PART_TYRE,
+    PART_LIGHT
+};
 
-static eOrbitPhase s_orbitPhase = ORBIT_PUMP_HOLD;
+struct RepairPartAction {
+    eRepairPartType type;
+    int   id;
+    int   nodeIndex;
+    float triggerT;
+    bool  executed;
+};
+
+static RepairPartAction s_repairQueue[32];
+static int              s_repairQueueCount = 0;
+
+enum eOrbitPhase { ORBIT_IDLE, ORBIT_GLIDE_OUT, ORBIT_RUNNING, ORBIT_GLIDE_IN };
+
+static eOrbitPhase s_orbitPhase = ORBIT_IDLE;
 static float       s_orbitElapsed = 0.0f;
+static float       s_orbitDir = 1.0f;
+static CVector     s_orbitGlideFromPos(0.0f, 0.0f, 0.0f);
+static CVector     s_orbitGlideFromLookAt(0.0f, 0.0f, 0.0f);
+static CVector     s_serviceCurrentSource(0.0f, 0.0f, 0.0f);
+static float       s_serviceOrbitDist = kServiceOrbitRadius;
 
 static void ResetOrbitPhase() {
-    s_orbitPhase = ORBIT_PUMP_HOLD;
+    s_orbitPhase = ORBIT_IDLE;
     s_orbitElapsed = 0.0f;
+    s_orbitDir = 1.0f;
+    s_serviceOrbitDist = kServiceOrbitRadius;
+    s_repairQueueCount = 0;
 }
 
-// Glides from wherever the orbit currently sits back to the stored pump framing.
-static void GlideToPumpView(float t) {
-    CVector source = LerpVec(TheCamera.m_vecFixedModeSource, s_serviceCamToPos, t);
-    CVector lookAt = LerpVec(TheCamera.m_vecFixedModeVector, s_serviceCamLookAt, t);
-    DriveOrbit(source, lookAt);
+static void StartServiceOrbit(CVehicle* veh) {
+    if (!g_config.showOrbitCamera) {
+        s_orbitPhase = ORBIT_RUNNING;
+        return;
+    }
+    s_orbitPhase = ORBIT_GLIDE_OUT;
+    s_orbitElapsed = 0.0f;
+    s_orbitGlideFromPos = s_serviceCamToPos;
+    s_orbitGlideFromLookAt = s_serviceCamLookAt;
+    s_serviceCurrentSource = s_serviceCamToPos;
+    s_serviceOrbitDist = kServiceOrbitRadius;
+
+    CVector fwd(0.0f, 1.0f, 0.0f);
+    CVector right(1.0f, 0.0f, 0.0f);
+    if (veh && veh->m_matrix) {
+        fwd = veh->m_matrix->GetForward();
+        right = veh->m_matrix->GetRight();
+    }
+    float vehYaw = atan2f(fwd.x, fwd.y);
+
+    CVector pumpRel = s_servicePumpPos - (veh ? veh->GetPosition() : CVector(0.0f, 0.0f, 0.0f));
+    float sideDot = pumpRel.x * right.x + pumpRel.y * right.y;
+
+    if (sideDot < 0.0f) {
+        // Pump on vehicle's left: start front-right, rotate right (clockwise away from pump)
+        s_serviceOrbitAngle = vehYaw + (kPi * 0.25f);
+        s_orbitDir = 1.0f;
+    } else {
+        // Pump on vehicle's right: start front-left, rotate left (counter-clockwise away from pump)
+        s_serviceOrbitAngle = vehYaw - (kPi * 0.25f);
+        s_orbitDir = -1.0f;
+    }
 }
 
 static void UpdateServiceCamera(float dt) {
     if (!s_serviceCamLocked) return;
     TheCamera.m_nCarZoom = s_servicePrevCarZoom;
 
-    if (s_serviceOp == SERVICE_OP_NONE) {
+    if (!g_config.showOrbitCamera || s_serviceOp == SERVICE_OP_NONE) {
         ResetOrbitPhase();
+        DriveOrbit(s_serviceCamToPos, s_serviceCamLookAt);
         return;
     }
 
@@ -676,66 +761,90 @@ static void UpdateServiceCamera(float dt) {
     CVehicle* veh = GetStablePlayerVehicle(player);
     if (!veh) return;
 
-    // Below the threshold there is nothing worth orbiting: keep the pump framing.
-    if (s_serviceOpDuration < kServiceOrbitThresholdSec) {
-        DriveOrbit(s_serviceCamToPos, s_serviceCamLookAt);
-        return;
-    }
-
     s_orbitElapsed += dt;
-    const float totalRemaining = s_serviceOpDuration - s_serviceOpTimer;
     CVector carPos = veh->GetPosition();
     const CVector lookAt = carPos + CVector(0.0f, 0.0f, 0.5f);
 
     switch (s_orbitPhase) {
-        case ORBIT_PUMP_HOLD:
+        case ORBIT_IDLE:
             DriveOrbit(s_serviceCamToPos, s_serviceCamLookAt);
-            if (s_orbitElapsed >= kServiceOrbitDelaySec) {
-                s_orbitPhase = ORBIT_GLIDE_OUT;
-                s_orbitElapsed = 0.0f;
-                TheCamera.m_vecFixedModeSource = s_serviceCamToPos;
-            }
             break;
 
         case ORBIT_GLIDE_OUT: {
             float t = Clampf(s_orbitElapsed / kServiceOrbitGlideSec, 0.0f, 1.0f);
             t = t * t * (3.0f - 2.0f * t);  // smoothstep
-            s_serviceOrbitAngle += dt * 0.30f;
-            CVector target(carPos.x + sinf(s_serviceOrbitAngle) * kServiceOrbitRadius,
-                           carPos.y + cosf(s_serviceOrbitAngle) * kServiceOrbitRadius,
-                           carPos.z + kServiceOrbitHeight);
-            CVector source = LerpVec(TheCamera.m_vecFixedModeSource, target, t);
-            DriveOrbit(source, lookAt);
+            CVector desiredTarget(carPos.x + sinf(s_serviceOrbitAngle) * kServiceOrbitRadius,
+                                  carPos.y + cosf(s_serviceOrbitAngle) * kServiceOrbitRadius,
+                                  carPos.z + kServiceOrbitHeight);
+            CVector target = ResolveCameraCollision(lookAt, desiredTarget, 0.35f, 2.0f);
+            CVector source = LerpVec(s_orbitGlideFromPos, target, t);
+            source = ResolveCameraCollision(lookAt, source, 0.35f, 1.5f);
+            CVector curLookAt = LerpVec(s_orbitGlideFromLookAt, lookAt, t);
+            s_serviceCurrentSource = source;
+            DriveOrbit(source, curLookAt);
             if (t >= 1.0f) {
                 s_orbitPhase = ORBIT_RUNNING;
                 s_orbitElapsed = 0.0f;
+                s_serviceOrbitDist = (source - lookAt).Magnitude();
             }
             break;
         }
 
         case ORBIT_RUNNING: {
-            s_serviceOrbitAngle += dt * 0.30f;
+            s_serviceOrbitAngle += dt * kServiceOrbitSpeed * s_orbitDir;
             if (s_serviceOrbitAngle > 2.0f * kPi) s_serviceOrbitAngle -= 2.0f * kPi;
-            CVector source(carPos.x + sinf(s_serviceOrbitAngle) * kServiceOrbitRadius,
-                           carPos.y + cosf(s_serviceOrbitAngle) * kServiceOrbitRadius,
-                           carPos.z + kServiceOrbitHeight);
-            DriveOrbit(source, lookAt);
-            // Start gliding back early enough that we land on the pump as it finishes.
-            if (totalRemaining <= kServiceOrbitReturnSec + kServiceOrbitGlideSec) {
-                s_orbitPhase = ORBIT_GLIDE_IN;
-                s_orbitElapsed = 0.0f;
-                TheCamera.m_vecFixedModeSource = source;
+            else if (s_serviceOrbitAngle < -2.0f * kPi) s_serviceOrbitAngle += 2.0f * kPi;
+
+            CVector desired(carPos.x + sinf(s_serviceOrbitAngle) * kServiceOrbitRadius,
+                            carPos.y + cosf(s_serviceOrbitAngle) * kServiceOrbitRadius,
+                            carPos.z + kServiceOrbitHeight);
+            CVector ray = desired - lookAt;
+            float maxDist = ray.Magnitude();
+            CVector rayDir = (maxDist > 0.001f) ? (ray / maxDist) : CVector(0.0f, 1.0f, 0.0f);
+
+            CColPoint colPoint;
+            CEntity* hitEntity = nullptr;
+            float targetDist = maxDist;
+            if (CWorld::ProcessLineOfSight(lookAt, desired, colPoint, hitEntity,
+                                          true,  // buildings
+                                          false, // vehicles
+                                          false, // peds
+                                          true,  // objects
+                                          false, // dummies
+                                          false, // seeThrough
+                                          true,  // cameraIgnore
+                                          false)) {
+                float hitDist = (colPoint.m_vecPoint - lookAt).Magnitude();
+                targetDist = Clampf(hitDist - 0.35f, 2.0f, maxDist);
             }
+
+            if (targetDist < s_serviceOrbitDist) {
+                s_serviceOrbitDist = Lerpf(s_serviceOrbitDist, targetDist, Clampf(dt * 8.0f, 0.0f, 1.0f));
+            } else {
+                s_serviceOrbitDist = Lerpf(s_serviceOrbitDist, targetDist, Clampf(dt * 3.0f, 0.0f, 1.0f));
+            }
+            float actualDist = std::min(s_serviceOrbitDist, targetDist);
+            CVector source = lookAt + rayDir * actualDist;
+            s_serviceCurrentSource = source;
+            DriveOrbit(source, lookAt);
             break;
         }
 
         case ORBIT_GLIDE_IN: {
             float t = Clampf(s_orbitElapsed / kServiceOrbitGlideSec, 0.0f, 1.0f);
             t = t * t * (3.0f - 2.0f * t);
-            GlideToPumpView(t);
+            CVector source = LerpVec(s_orbitGlideFromPos, s_serviceCamToPos, t);
+            source = ResolveCameraCollision(lookAt, source, 0.35f, 1.5f);
+            CVector curLookAt = LerpVec(s_orbitGlideFromLookAt, s_serviceCamLookAt, t);
+            s_serviceCurrentSource = source;
+            DriveOrbit(source, curLookAt);
             if (t >= 1.0f) {
-                s_orbitPhase = ORBIT_PUMP_HOLD;
+                s_orbitPhase = ORBIT_IDLE;
                 s_orbitElapsed = 0.0f;
+                s_serviceOp = SERVICE_OP_NONE;
+                s_serviceOpTimer = 0.0f;
+                s_serviceOpFixed = false;
+                EnterPumpView();
             }
             break;
         }
@@ -778,6 +887,151 @@ static void FreezeServiceInput(CVehicle* veh, float dt) {
     UpdateServiceCamera(dt);
 }
 
+static void BuildRepairQueue(CVehicle* veh) {
+    s_repairQueueCount = 0;
+    if (!veh || veh->m_nVehicleSubClass != VEHICLE_AUTOMOBILE) return;
+
+    CAutomobile* car = static_cast<CAutomobile*>(veh);
+
+    static const int kDoorNodeMap[6] = {
+        CAR_BONNET, CAR_BOOT, CAR_DOOR_LF, CAR_DOOR_RF, CAR_DOOR_LR, CAR_DOOR_RR
+    };
+    static const int kPanelNodeMap[7] = {
+        CAR_WING_LF, CAR_WING_RF, -1, -1, CAR_WINDSCREEN, CAR_BUMP_FRONT, CAR_BUMP_REAR
+    };
+
+    RepairPartAction damaged[24];
+    int damagedCount = 0;
+    RepairPartAction detached[24];
+    int detachedCount = 0;
+
+    // 1. Doors (bonnet, boot, 4 doors)
+    for (int i = 0; i < 6; ++i) {
+        unsigned char st = car->m_damageManager.m_anDoorsStatus[i];
+        if (st == DAMSTATE_OK) continue;
+
+        RepairPartAction act;
+        act.type = PART_DOOR;
+        act.id = i;
+        act.nodeIndex = kDoorNodeMap[i];
+        act.triggerT = 0.0f;
+        act.executed = false;
+
+        if (st == DAMSTATE_NOTPRESENT) {
+            if (detachedCount < 24) detached[detachedCount++] = act;
+        } else {
+            if (damagedCount < 24) damaged[damagedCount++] = act;
+        }
+    }
+
+    // 2. Panels (wings, windscreen, bumpers)
+    for (int i = 0; i < 7; ++i) {
+        unsigned int st = car->m_damageManager.GetPanelStatus(i);
+        if (st == 0) continue;
+
+        RepairPartAction act;
+        act.type = PART_PANEL;
+        act.id = i;
+        act.nodeIndex = kPanelNodeMap[i];
+        act.triggerT = 0.0f;
+        act.executed = false;
+
+        if (st >= 3) {
+            if (detachedCount < 24) detached[detachedCount++] = act;
+        } else {
+            if (damagedCount < 24) damaged[damagedCount++] = act;
+        }
+    }
+
+    // 3. Tyres (always damaged, never detached)
+    for (int i = 0; i < 4; ++i) {
+        if (car->m_damageManager.m_anWheelsStatus[i] != 0) {
+            RepairPartAction act;
+            act.type = PART_TYRE;
+            act.id = i;
+            act.nodeIndex = -1;
+            act.triggerT = 0.0f;
+            act.executed = false;
+            if (damagedCount < 24) damaged[damagedCount++] = act;
+        }
+    }
+
+    // 4. Lights (always damaged glass)
+    for (int i = 0; i < 4; ++i) {
+        if (car->m_damageManager.GetLightStatus((eLights)i) != 0) {
+            RepairPartAction act;
+            act.type = PART_LIGHT;
+            act.id = i;
+            act.nodeIndex = -1;
+            act.triggerT = 0.0f;
+            act.executed = false;
+            if (damagedCount < 24) damaged[damagedCount++] = act;
+        }
+    }
+
+    // Assign trigger times: damaged first, then detached
+    if (damagedCount > 0 && detachedCount > 0) {
+        for (int i = 0; i < damagedCount; ++i) {
+            damaged[i].triggerT = 0.08f + ((float)i / (float)damagedCount) * 0.40f;
+            if (s_repairQueueCount < 32) s_repairQueue[s_repairQueueCount++] = damaged[i];
+        }
+        for (int i = 0; i < detachedCount; ++i) {
+            detached[i].triggerT = 0.54f + ((float)i / (float)detachedCount) * 0.36f;
+            if (s_repairQueueCount < 32) s_repairQueue[s_repairQueueCount++] = detached[i];
+        }
+    } else if (damagedCount > 0) {
+        for (int i = 0; i < damagedCount; ++i) {
+            damaged[i].triggerT = 0.08f + ((float)i / (float)damagedCount) * 0.80f;
+            if (s_repairQueueCount < 32) s_repairQueue[s_repairQueueCount++] = damaged[i];
+        }
+    } else if (detachedCount > 0) {
+        for (int i = 0; i < detachedCount; ++i) {
+            detached[i].triggerT = 0.12f + ((float)i / (float)detachedCount) * 0.76f;
+            if (s_repairQueueCount < 32) s_repairQueue[s_repairQueueCount++] = detached[i];
+        }
+    }
+}
+
+static void UpdateRepairQueue(CVehicle* veh, float t) {
+    if (!veh || s_repairQueueCount == 0) return;
+    if (veh->m_nVehicleSubClass != VEHICLE_AUTOMOBILE) return;
+    CAutomobile* car = static_cast<CAutomobile*>(veh);
+
+    for (int i = 0; i < s_repairQueueCount; ++i) {
+        RepairPartAction& act = s_repairQueue[i];
+        if (act.executed || t < act.triggerT) continue;
+
+        act.executed = true;
+        switch (act.type) {
+            case PART_DOOR:
+                if (act.nodeIndex >= 0 && act.nodeIndex < CAR_NUM_NODES && car->m_aCarNodes[act.nodeIndex]) {
+                    car->FixDoor(act.nodeIndex, (eDoors)act.id);
+                } else {
+                    car->m_damageManager.SetDoorStatus((eDoors)act.id, DAMSTATE_OK);
+                }
+                break;
+
+            case PART_PANEL:
+                if (act.nodeIndex >= 0 && act.nodeIndex < CAR_NUM_NODES && car->m_aCarNodes[act.nodeIndex]) {
+                    car->FixPanel(act.nodeIndex, (ePanels)act.id);
+                } else {
+                    car->m_damageManager.SetPanelStatus(act.id, 0);
+                }
+                break;
+
+            case PART_TYRE:
+                car->FixTyre((eWheels)act.id);
+                break;
+
+            case PART_LIGHT:
+                car->m_damageManager.SetLightStatus((eLights)act.id, 0);
+                break;
+        }
+
+        AudioEngine.ReportFrontendAudioEvent(AE_FRONTEND_BUY_CAR_MOD, 0.0f, 1.0f);
+    }
+}
+
 // True when the vehicle has anything worth repairing. Fix() restores engine health,
 // panels, doors, lights and tyres, so any of those being off counts.
 static bool NeedsRepair(const CVehicle* veh) {
@@ -813,11 +1067,11 @@ void Radar::UpdateFuelServices() {
                   && player->m_pPlayerData->m_pWanted->m_nWantedLevel > 0;
 
     // Nearest live pump object within reach, and whether the car is parked there.
-    const PumpCluster* pump = nullptr;
+    CObject* pump = nullptr;
     CVector pumpPos(0.0f, 0.0f, 0.0f);
     if (eligible) {
         pump = FindNearestPump(veh->GetPosition(), g_config.refuelRadius);
-        if (pump) pumpPos = pump->pos;
+        if (pump) pumpPos = pump->GetPosition();
     }
 
     bool stopped = eligible && veh->m_vecMoveSpeed.Magnitude() < 0.05f;
@@ -847,15 +1101,15 @@ void Radar::UpdateFuelServices() {
     bool backPad   = IsPadButtonDown(g_config.serviceBackPad);
     bool holdPad   = IsPadButtonDown(g_config.servicePad);
 
-    bool selectDown = selectKey || selectPad;
-    bool upDown     = upKey     || upPad;
-    bool downDown   = downKey   || downPad;
-    bool backDown   = backKey   || backPad;
-    bool holdDown   = holdKey   || holdPad;
-
     // Remember which device was used last so the badges match the player's hands.
-    if (selectPad || upPad || downPad || backPad || holdPad) s_serviceUsingPad = true;
-    else if (selectKey || upKey || downKey || backKey || holdKey) s_serviceUsingPad = false;
+    if (holdPad || (s_serviceOpen && (selectPad || upPad || downPad || backPad))) s_serviceUsingPad = true;
+    else if (holdKey || selectKey || upKey || downKey || backKey) s_serviceUsingPad = false;
+
+    bool selectDown = s_serviceUsingPad ? selectPad : selectKey;
+    bool upDown     = s_serviceUsingPad ? upPad     : upKey;
+    bool downDown   = s_serviceUsingPad ? downPad   : downKey;
+    bool backDown   = s_serviceUsingPad ? backPad   : backKey;
+    bool holdDown   = holdKey || holdPad;
 
     // Freeze only after the pad has been sampled above, otherwise clearing the
     // input state would also swallow the menu's own navigation.
@@ -878,22 +1132,48 @@ void Radar::UpdateFuelServices() {
         }
 
         if (canOpen) {
-            // Pump location, player head height: reads at eye level while staying
-            // over the pump instead of following the car.
-            s_serviceAnchor = CVector(pumpPos.x, pumpPos.y,
-                                      player->GetPosition().z + 0.65f);
-            s_servicePromptAlpha = std::min(1.0f, s_servicePromptAlpha + dt * 6.0f);
-            if (holdDown) {
-                s_serviceHoldTime += dt;
-                if (s_serviceHoldTime >= 1.0f) {
-                    s_serviceOpen = true;
-                    s_serviceRow = SERVICE_ROW_REFUEL;
+            // Horizontal center of the pump using its collision bounding box offset,
+            // while preserving player eye level height.
+            CBaseModelInfo* mi = CModelInfo::GetModelInfo(pump->m_nModelIndex);
+            CVector centerOff(0.0f, 0.0f, 0.0f);
+            if (mi && mi->m_pColModel) {
+                centerOff = (mi->m_pColModel->m_boundBox.m_vecMin + mi->m_pColModel->m_boundBox.m_vecMax) * 0.5f;
+                centerOff.z = 0.0f;
+            }
+            CVector pumpCenter = pump->TransformFromObjectSpace(centerOff);
+            s_serviceAnchor = CVector(pumpCenter.x, pumpCenter.y,
+                                      player->GetPosition().z + 0.50f);
+
+            // Screen-center gaze check: only prompt when player is looking at the pump
+            float sx = 0.0f, sy = 0.0f;
+            bool onScreen = ProjectAnchor(s_serviceAnchor, sx, sy);
+            float sW = (float)RsGlobal.maximumWidth;
+            float sH = (float)RsGlobal.maximumHeight;
+            float dx = (sH > 0.0f) ? (sx - sW * 0.5f) / sH : 1.0f;
+            float dy = (sH > 0.0f) ? (sy - sH * 0.5f) / sH : 1.0f;
+            float distFromCenter = sqrtf(dx * dx + dy * dy);
+            bool lookingAtPump = onScreen && (distFromCenter <= 0.18f);
+
+            if (lookingAtPump) {
+                s_servicePromptAlpha = std::min(1.0f, s_servicePromptAlpha + dt * 6.0f);
+                if (holdDown) {
+                    s_serviceHoldTime += dt;
+                    if (s_serviceHoldTime >= 1.0f) {
+                        s_serviceOpen = true;
+                        s_serviceRow = SERVICE_ROW_REFUEL;
+                        s_serviceScrollRow = (float)s_serviceRow;
+                        s_serviceHoldTime = 0.0f;
+                        s_serviceLastSelect = true;
+                        s_serviceLastBack = true;
+                        HoldServiceControlBits();
+                        s_servicePadDisabled = true;
+                        BeginServiceCamera(veh->GetPosition(), pumpPos);
+                    }
+                } else {
                     s_serviceHoldTime = 0.0f;
-                    HoldServiceControlBits();
-                    s_servicePadDisabled = true;
-                    BeginServiceCamera(veh->GetPosition(), pumpPos);
                 }
             } else {
+                s_servicePromptAlpha = std::max(0.0f, s_servicePromptAlpha - dt * 6.0f);
                 s_serviceHoldTime = 0.0f;
             }
         } else {
@@ -905,41 +1185,60 @@ void Radar::UpdateFuelServices() {
 
     // Menu is open: keep the prompt fully opaque and drive the list.
     s_servicePromptAlpha = 1.0f;
+    s_serviceScrollRow = Lerpf(s_serviceScrollRow, (float)s_serviceRow, dt * 14.0f);
+    if (fabsf(s_serviceScrollRow - (float)s_serviceRow) < 0.001f) {
+        s_serviceScrollRow = (float)s_serviceRow;
+    }
 
         // A running operation owns the row input until it finishes.
     if (s_serviceOp != SERVICE_OP_NONE) {
-        s_serviceOpTimer += dt;
-        // Fill progress runs over s_serviceOpFillTime, which excludes the orbit pad,
-        // so the value is complete by the time the camera dives back to the pump.
-        float t = (s_serviceOpFillTime > 0.0f)
-                    ? Clampf(s_serviceOpTimer / s_serviceOpFillTime, 0.0f, 1.0f)
-                    : 1.0f;
+        if (s_orbitPhase == ORBIT_RUNNING) {
+            s_serviceOpTimer += dt;
+            float t = (s_serviceOpDuration > 0.0f)
+                        ? Clampf(s_serviceOpTimer / s_serviceOpDuration, 0.0f, 1.0f)
+                        : 1.0f;
 
-        VehicleFuelExt& opExt = s_vehicleFuelExt.Get(veh);
-        if (s_serviceOp == SERVICE_OP_REFUEL) {
-            // s_vehFuel is what the gauge shows, so it is the authority here. Mirror
-            // into the ext so the two can never drift apart again.
-            s_vehFuel = Lerpf(s_serviceOpFromValue, 1.0f, t);
-            opExt.fuelLevel = s_vehFuel;
-        } else {
-            veh->m_fHealth = Lerpf(s_serviceOpFromValue, 1000.0f, t);
-            if (t >= 1.0f && !s_serviceOpFixed) { veh->Fix(); s_serviceOpFixed = true; }
-        }
+            VehicleFuelExt& opExt = s_vehicleFuelExt.Get(veh);
+            if (s_serviceOp == SERVICE_OP_REFUEL) {
+                // s_vehFuel is what the gauge shows, so it is the authority here. Mirror
+                // into the ext so the two can never drift apart again.
+                s_vehFuel = Lerpf(s_serviceOpFromValue, 1.0f, t);
+                opExt.fuelLevel = s_vehFuel;
+            } else {
+                veh->m_fHealth = Lerpf(s_serviceOpFromValue, 1000.0f, t);
+                if (g_config.incrementalRepair) {
+                    UpdateRepairQueue(veh, t);
+                }
+                if (t >= 1.0f && !s_serviceOpFixed) { veh->Fix(); s_serviceOpFixed = true; }
+            }
 
-        if (s_serviceOpTimer >= s_serviceOpDuration) {
-            s_serviceOp = SERVICE_OP_NONE;
-            s_serviceOpTimer = 0.0f;
-            s_serviceOpFixed = false;
-            // Glide back to the pump view through the game's own transition.
-            EnterPumpView();
+            if (s_serviceOpTimer >= s_serviceOpDuration) {
+                if (g_config.showOrbitCamera) {
+                    s_orbitPhase = ORBIT_GLIDE_IN;
+                    s_orbitElapsed = 0.0f;
+                    CVector carPos = veh->GetPosition();
+                    s_orbitGlideFromPos = s_serviceCurrentSource;
+                    s_orbitGlideFromLookAt = carPos + CVector(0.0f, 0.0f, 0.5f);
+                } else {
+                    s_orbitPhase = ORBIT_IDLE;
+                    s_orbitElapsed = 0.0f;
+                    s_serviceOp = SERVICE_OP_NONE;
+                }
+            }
         }
         s_serviceLastSelect = selectDown;
         s_serviceLastBack = backDown;
         return;
     }
 
-    if (upDown && !s_serviceLastUp)     s_serviceRow = (s_serviceRow + SERVICE_ROW_COUNT - 1) % SERVICE_ROW_COUNT;
-    if (downDown && !s_serviceLastDown) s_serviceRow = (s_serviceRow + 1) % SERVICE_ROW_COUNT;
+    if (upDown && !s_serviceLastUp) {
+        s_serviceRow = (s_serviceRow + SERVICE_ROW_COUNT - 1) % SERVICE_ROW_COUNT;
+        AudioEngine.ReportFrontendAudioEvent(AE_FRONTEND_HIGHLIGHT, 0.0f, 1.0f);
+    }
+    if (downDown && !s_serviceLastDown) {
+        s_serviceRow = (s_serviceRow + 1) % SERVICE_ROW_COUNT;
+        AudioEngine.ReportFrontendAudioEvent(AE_FRONTEND_HIGHLIGHT, 0.0f, 1.0f);
+    }
     s_serviceLastUp = upDown;
     s_serviceLastDown = downDown;
 
@@ -957,13 +1256,12 @@ void Radar::UpdateFuelServices() {
                 CWorld::Players[0].m_nMoney -= price;
                 s_serviceOp = SERVICE_OP_REFUEL;
                 s_serviceOpFromValue = s_vehFuel;
-                // Pad the fill so it does not finish mid-transition into the orbit.
-                s_serviceOpDuration = (1.0f - s_vehFuel) * 100.0f * g_config.refuelDurationPerPct
-                                    + kServiceOrbitPad;
-                s_serviceOpFillTime = s_serviceOpDuration - kServiceOrbitPad;
+                s_serviceOpDuration = (1.0f - s_vehFuel) * 100.0f * g_config.refuelDurationPerPct;
+                if (s_serviceOpDuration < 2.0f) s_serviceOpDuration = 2.0f;
+                s_serviceOpFillTime = s_serviceOpDuration;
                 s_serviceOpTimer = 0.0f;
-                s_serviceOrbitAngle = 0.0f;
-                EnterOrbitView(veh);
+                s_serviceOpFixed = false;
+                StartServiceOrbit(veh);
                 LogWrite("fuel: refuelling for $%d over %.1fs (from %.0f%%)",
                          price, s_serviceOpDuration, s_vehFuel * 100.0f);
             }
@@ -973,14 +1271,23 @@ void Radar::UpdateFuelServices() {
                 CWorld::Players[0].m_nMoney -= price;
                 // Timed repair: 1s per 10% of health, configurable.
                 float missing = Clampf((1000.0f - veh->m_fHealth) / 100.0f, 0.0f, 10.0f);
+                if (g_config.incrementalRepair) {
+                    BuildRepairQueue(veh);
+                    float baseDuration = missing * g_config.repairDurationPer10Pct;
+                    s_serviceOpDuration = std::max(2.5f, std::max(baseDuration, s_repairQueueCount * 0.45f));
+                } else {
+                    s_repairQueueCount = 0;
+                    float baseDuration = missing * g_config.repairDurationPer10Pct;
+                    s_serviceOpDuration = std::max(2.0f, baseDuration);
+                }
                 s_serviceOp = SERVICE_OP_REPAIR;
                 s_serviceOpFromValue = veh->m_fHealth;
-                s_serviceOpDuration = missing * g_config.repairDurationPer10Pct + kServiceOrbitPad;
-                s_serviceOpFillTime = s_serviceOpDuration - kServiceOrbitPad;
+                s_serviceOpFillTime = s_serviceOpDuration;
                 s_serviceOpTimer = 0.0f;
-                s_serviceOrbitAngle = 0.0f;
-                EnterOrbitView(veh);
-                LogWrite("fuel: repairing for $%d over %.1fs", price, s_serviceOpDuration);
+                s_serviceOpFixed = false;
+                StartServiceOrbit(veh);
+                LogWrite("fuel: repairing for $%d over %.1fs (%d parts queued)",
+                         price, s_serviceOpDuration, s_repairQueueCount);
             }
         }
     }

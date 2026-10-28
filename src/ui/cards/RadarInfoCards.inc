@@ -75,6 +75,7 @@ enum eServiceRow {
 
 static bool     s_serviceOpen        = false;
 static int      s_serviceRow         = SERVICE_ROW_REFUEL;
+static float    s_serviceScrollRow   = 0.0f;
 static float    s_serviceHoldTime    = 0.0f;
 static float    s_servicePromptAlpha = 0.0f;
 static CVector  s_serviceAnchor(0.0f, 0.0f, 0.0f);
@@ -83,6 +84,16 @@ static bool     s_serviceLastUp      = false;
 static bool     s_serviceLastDown    = false;
 static bool     s_serviceLastBack    = false;
 static bool     s_serviceCamLocked   = false;
+
+static bool ProjectAnchor(const CVector& worldPos, float& outX, float& outY) {
+    RwV3d in = { worldPos.x, worldPos.y, worldPos.z };
+    RwV3d out = {};
+    float w = 0.0f, h = 0.0f;
+    if (!CSprite::CalcScreenCoors(in, &out, &w, &h, true, true)) return false;
+    outX = out.x;
+    outY = out.y;
+    return true;
+}
 
 // Camera dolly toward the pump: start matrix captured on open, target built from
 // the car and pump positions, blended over kServiceCamBlendSeconds.
@@ -94,6 +105,7 @@ static eCamMode s_servicePrevCamMode  = (eCamMode)0;
 static CVector  s_serviceCamFromPos(0.0f, 0.0f, 0.0f);
 static CVector  s_serviceCamToPos(0.0f, 0.0f, 0.0f);
 static CVector  s_serviceCamLookAt(0.0f, 0.0f, 0.0f);
+static CVector  s_servicePumpPos(0.0f, 0.0f, 0.0f);
 static float    s_serviceCamBlend     = 0.0f;
 
 // Which device the player last touched, so the key badges match their hands.
@@ -137,125 +149,59 @@ static bool s_lastArcsEnabled    = false;
 
 // The three DFFs San Andreas uses for every petrol pump in the world. Matching by
 // model covers all ~40 pumps, including the ones missing from any hand-written list.
-static bool s_pumpModelsResolved = false;
-static int  s_pumpModels[3] = { -1, -1, -1 };
+// DFF models that act as petrol pumps. Parsed from FUEL_PUMP_MODEL_NAMES in config.
+static bool             s_pumpModelsResolved = false;
+static std::vector<int> s_pumpModelIds;
 
 static void ResolvePumpModels() {
     if (s_pumpModelsResolved) return;
     s_pumpModelsResolved = true;
-    static const char* const kNames[3] = { "washgaspump", "petrolpumpnew", "vegspetrolpump" };
-    for (int i = 0; i < 3; ++i) {
+    s_pumpModelIds.clear();
+
+    std::stringstream ss(g_config.fuelPumpModelNames);
+    std::string token;
+    while (std::getline(ss, token, ',')) {
+        size_t first = token.find_first_not_of(" \t\r\n");
+        if (first == std::string::npos) continue;
+        size_t last = token.find_last_not_of(" \t\r\n");
+        std::string name = token.substr(first, last - first + 1);
+        if (name.empty()) continue;
+
         int id = -1;
-        if (CModelInfo::GetModelInfo(kNames[i], &id) && id >= 0) s_pumpModels[i] = id;
+        if (CModelInfo::GetModelInfo(name.c_str(), &id) && id >= 0) {
+            s_pumpModelIds.push_back(id);
+        }
     }
-    LogWrite("fuel: pump models %d/%d/%d", s_pumpModels[0], s_pumpModels[1], s_pumpModels[2]);
+    LogWrite("fuel: resolved %d pump models from '%s'",
+             (int)s_pumpModelIds.size(), g_config.fuelPumpModelNames.c_str());
 }
 
 static bool IsPumpModel(int modelIndex) {
-    for (int i = 0; i < 3; ++i) {
-        if (s_pumpModels[i] >= 0 && modelIndex == s_pumpModels[i]) return true;
+    ResolvePumpModels();
+    for (int id : s_pumpModelIds) {
+        if (id == modelIndex) return true;
     }
     return false;
 }
-static const float kPumpClusterRadius = 10.0f;
-static const int   kMaxPumpClusters   = 160;
 
-struct PumpCluster {
-    CVector pos;
-    int     blipIndex;
-};
-
-static PumpCluster s_pumpClusters[kMaxPumpClusters];
-static int         s_pumpClusterCount = 0;
-static bool        s_pumpSpriteResolved = false;
-static int         s_pumpSpriteId = 0;
-
-// Resolves the blip sprite once. A custom assets/blips/fuel.dds replaces an unused
-// radar sprite slot when it loads; otherwise the ammu-nation icon stands in.
-static int ResolvePumpBlipSprite() {
-    if (s_pumpSpriteResolved) return s_pumpSpriteId;
-    s_pumpSpriteResolved = true;
-    s_pumpSpriteId = RADAR_SPRITE_AMMUGUN;
-
-    RwTexture* tex = RwTextureRead("fuel", nullptr);
-    if (tex && CRadar::RadarBlipSprites) {
-        // Slot 63 is the spray-can sprite, which GTA SA never uses for blips.
-        const int slot = RADAR_SPRITE_SPRAY;
-        if (slot < (int)MAX_RADAR_SPRITES && CRadar::RadarBlipSprites[slot].m_pTexture) {
-            CRadar::RadarBlipSprites[slot].m_pTexture = tex;
-            s_pumpSpriteId = slot;
-            LogWrite("fuel: pump blip using custom texture in sprite slot %d", slot);
-        }
-    }
-    if (s_pumpSpriteId == RADAR_SPRITE_AMMUGUN) {
-        LogWrite("fuel: no custom pump blip texture, using RADAR_SPRITE_AMMUGUN");
-    }
-    return s_pumpSpriteId;
-}
-
-static void ClearPumpBlips();
-
-// Adds any pump objects currently streamed in to the persistent cache, and creates a
-// native radar blip for each new cluster. Blips mean the game draws them on both the
-// radar and the ESC map with its own projection, alpha and edge clamping.
-static void RefreshPumpClusters() {
+// Nearest pump object to `pos` within `radius`, or null. Scans the live object pool
+// so the anchor lands on the real pump entity.
+static CObject* FindNearestPump(const CVector& pos, float radius) {
     ResolvePumpModels();
-    if (!CPools::ms_pObjectPool) return;
+    if (!CPools::ms_pObjectPool) return nullptr;
 
-    const float clusterSq = kPumpClusterRadius * kPumpClusterRadius;
-    const int spriteId = ResolvePumpBlipSprite();
+    CObject* best = nullptr;
+    float bestSq = radius * radius;
     const int size = CPools::ms_pObjectPool->m_nSize;
-
     for (int i = 0; i < size; ++i) {
         CObject* obj = CPools::ms_pObjectPool->GetAt(i);
         if (!obj || !IsPumpModel(obj->m_nModelIndex)) continue;
 
         const CVector objPos = obj->GetPosition();
-
-        bool known = false;
-        for (int c = 0; c < s_pumpClusterCount; ++c) {
-            const float dx = objPos.x - s_pumpClusters[c].pos.x;
-            const float dy = objPos.y - s_pumpClusters[c].pos.y;
-            if (dx * dx + dy * dy < clusterSq) { known = true; break; }
-        }
-        if (known) continue;
-        if (s_pumpClusterCount >= kMaxPumpClusters) continue;
-
-        PumpCluster& cluster = s_pumpClusters[s_pumpClusterCount];
-        cluster.pos = objPos;
-        cluster.blipIndex = CRadar::SetShortRangeCoordBlip(
-            BLIP_COORD, objPos, 0, BLIP_DISPLAY_BLIP_ONLY, nullptr);
-        if (cluster.blipIndex >= 0) {
-            CRadar::SetBlipSprite(cluster.blipIndex, spriteId);
-            CRadar::ChangeBlipColour(cluster.blipIndex, BLIP_COLOUR_GREEN);
-        }
-        s_pumpClusterCount++;
-    }
-}
-
-// Removes every blip this plugin created. Required on unload: the trace array is
-// fixed at 175 slots and leaking them permanently loses map blips.
-static void ClearPumpBlips() {
-    for (int i = 0; i < s_pumpClusterCount; ++i) {
-        if (s_pumpClusters[i].blipIndex >= 0) {
-            CRadar::ClearBlip(s_pumpClusters[i].blipIndex);
-            s_pumpClusters[i].blipIndex = -1;
-        }
-    }
-    s_pumpClusterCount = 0;
-}
-
-// Nearest cached pump cluster to `pos` within `radius`, or null. Reads the persistent
-// cache rather than the object pool, so pumps the player has already driven past are
-// still known even after the game streams them out.
-static const PumpCluster* FindNearestPump(const CVector& pos, float radius) {
-    const PumpCluster* best = nullptr;
-    float bestSq = radius * radius;
-    for (int i = 0; i < s_pumpClusterCount; ++i) {
-        const float dx = pos.x - s_pumpClusters[i].pos.x;
-        const float dy = pos.y - s_pumpClusters[i].pos.y;
+        const float dx = pos.x - objPos.x;
+        const float dy = pos.y - objPos.y;
         const float sq = dx * dx + dy * dy;
-        if (sq < bestSq) { bestSq = sq; best = &s_pumpClusters[i]; }
+        if (sq < bestSq) { bestSq = sq; best = obj; }
     }
     return best;
 }

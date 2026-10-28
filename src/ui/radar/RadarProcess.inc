@@ -65,10 +65,6 @@ void Radar::Process() {
     if (g_config.enableWantedSearchRadius) GuardedRun(UpdateWantedSearch, "process.wanted");
     if (g_config.showInfoCards)            GuardedRun(UpdateInfoCards, "process.cards");
     GuardedRun(UpdateFuelServices, "process.fuel");
-    // Adds newly streamed pumps to the persistent cache and blips them. Pumps live in
-    // binary IPLs, so the list accumulates as the map streams in rather than being
-    // rebuilt from scratch.
-    GuardedRun(RefreshPumpClusters, "process.pumps");
     GuardedRun(WriteDebugLog, "process.debug");
 
     if (g_config.enabled) {

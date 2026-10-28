@@ -403,11 +403,13 @@ static void DrawTopRightHUD(float masterAlpha) {
             float fontScaleX = sH * 0.0008125f;
             float fontScaleY = sH * 0.001625f;
 
+            RwRenderStateSet(rwRENDERSTATETEXTURERASTER, NULL);
             CFont::SetFontStyle(FONT_PRICEDOWN);
             CFont::SetScale(fontScaleX, fontScaleY);
             CFont::SetProportional(true);
             CFont::SetJustify(false);
             CFont::SetOrientation(ALIGN_LEFT);
+            CFont::SetDropShadowPosition(0);
             CFont::SetEdge(1);
             CFont::SetDropColor(ModColor(g_config.moneyStrokeColor, currentMoneyAlpha));
             CFont::SetColor(ModColor(g_config.moneyTextColor, currentMoneyAlpha));

@@ -68,17 +68,12 @@ Copy-Item (Join-Path $RepoRoot "6hud.ini") (Join-Path $StageDir "6hud.ini") -For
 New-Item -ItemType Directory -Force -Path (Join-Path $StageDir "6hud") | Out-Null
 Copy-Item (Join-Path $RepoRoot "assets\colors.ini") (Join-Path $StageDir "6hud\colors.ini") -Force
 
-# Texture tree: radar/, wanted/, weapon/
+# Texture & data tree
 $assetsSrc = Join-Path $RepoRoot "assets"
 $assetsDst = Join-Path $StageDir "6hud\assets"
 New-Item -ItemType Directory -Force -Path $assetsDst | Out-Null
-foreach ($sub in @("radar", "wanted", "weapon")) {
-    $src = Join-Path $assetsSrc $sub
-    if (Test-Path $src) {
-        Copy-Item $src -Destination $assetsDst -Recurse -Force
-    }
-}
-Copy-Item (Join-Path $assetsSrc "wallet.png") $assetsDst -Force -ErrorAction SilentlyContinue
+Copy-Item (Join-Path $assetsSrc "*") $assetsDst -Recurse -Force
+Remove-Item (Join-Path $assetsDst "colors.ini") -Force -ErrorAction SilentlyContinue
 
 # --- Install instructions ----------------------------------------------------
 $readme = @"
@@ -98,6 +93,14 @@ INSTALLATION
 
 3. Start the game.
 
+IMPORTANT: CONFIG UPGRADE & MIGRATION
+The configuration structure in 6hud.ini has been reorganized into [UI], [EXT], and [KEYS] sections.
+If upgrading from an earlier version (e.g. v0.1.0), do NOT overwrite your settings blindly:
+1. Rename your existing '6hud.ini' to '6hud.old.ini' before extracting.
+2. Extract the new '6hud.ini' and files.
+3. 6HUD automatically detects '6hud.old.ini' on startup and migrates all your customized settings
+   into the new structure seamlessly.
+
 REQUIREMENTS
 - GTA San Andreas 1.0 US "HOODLUM" only
   gta_sa.exe  14,383,616 bytes
@@ -114,6 +117,7 @@ DEFAULT KEYS
   K      Hold to zoom the radar out for a tactical overview
   G      Hold to peek a zoomed-out radar view
   /      Open the in-game settings menu (ESC closes it)
+  LCTRL  Hold near a gas pump to open fuel & repair services (Gamepad: LB)
 
 NOTES
 - The radar is hidden on foot by default. Press J to show it.
